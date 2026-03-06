@@ -1,7 +1,19 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Code2, BookOpen, ArrowRight, Clock, BarChart3, Users } from "lucide-react";
+import { Code2, BookOpen, ArrowRight, Clock, Users } from "lucide-react";
 import { motion } from "framer-motion";
+
+// Định nghĩa kiểu dữ liệu Khóa học (Khớp với Database từ C# Backend)
+interface Course {
+  id: number;
+  title: string;
+  description: string;
+  level: string;
+  // Các trường dưới đây chưa có trong DB, tạm thời để optional (?)
+  lessons?: number;
+  students?: number;
+}
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -11,33 +23,6 @@ const fadeUp = {
   })
 };
 
-const courses = [
-  {
-    id: 1, title: "Python cơ bản", desc: "Biến, kiểu dữ liệu, vòng lặp, hàm và cấu trúc dữ liệu cơ bản.",
-    level: "Cơ bản", lessons: 12, students: 1240, color: "primary",
-  },
-  {
-    id: 2, title: "JavaScript & DOM", desc: "Tương tác với trang web, xử lý sự kiện và thao tác DOM.",
-    level: "Cơ bản", lessons: 15, students: 980, color: "primary",
-  },
-  {
-    id: 3, title: "Cấu trúc dữ liệu", desc: "Stack, Queue, Linked List, Tree và các thuật toán tìm kiếm/sắp xếp.",
-    level: "Trung bình", lessons: 20, students: 670, color: "accent",
-  },
-  {
-    id: 4, title: "React.js Thực chiến", desc: "Components, State, Hooks và xây dựng ứng dụng SPA hoàn chỉnh.",
-    level: "Trung bình", lessons: 18, students: 540, color: "accent",
-  },
-  {
-    id: 5, title: "Thuật toán nâng cao", desc: "Dynamic Programming, Greedy, Graph — luyện đề thi và phỏng vấn.",
-    level: "Nâng cao", lessons: 25, students: 320, color: "destructive",
-  },
-  {
-    id: 6, title: "SQL & Cơ sở dữ liệu", desc: "Thiết kế database, truy vấn, JOIN, subquery và tối ưu hóa.",
-    level: "Cơ bản", lessons: 10, students: 890, color: "primary",
-  },
-];
-
 const levelColor: Record<string, string> = {
   "Cơ bản": "bg-primary/10 text-primary",
   "Trung bình": "bg-accent/10 text-accent",
@@ -45,6 +30,25 @@ const levelColor: Record<string, string> = {
 };
 
 const Courses = () => {
+  // 1. Khai báo State để chứa dữ liệu từ API
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 2. Gọi API khi trang được tải lên
+  useEffect(() => {
+    // Lưu ý: Đảm bảo cổng 5043 khớp với cổng Backend ASP.NET của bạn
+    fetch("http://localhost:5043/api/Courses")
+      .then((response) => response.json())
+      .then((data) => {
+        setCourses(data); // Đưa dữ liệu thật vào state
+        setIsLoading(false); // Tắt màn hình loading
+      })
+      .catch((error) => {
+        console.error("Lỗi khi lấy dữ liệu khóa học:", error);
+        setIsLoading(false);
+      });
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Navbar */}
@@ -75,31 +79,49 @@ const Courses = () => {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.map((c, i) => (
-            <motion.div
-              key={c.id}
-              initial="hidden" whileInView="visible" viewport={{ once: true }}
-              variants={fadeUp} custom={i}
-            >
-              <Link to="/workspace" className="group block rounded-xl border border-border bg-card p-6 shadow-card hover:shadow-elevated transition-all duration-300 hover:-translate-y-1">
-                <div className="flex items-center justify-between mb-4">
-                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${levelColor[c.level]}`}>{c.level}</span>
-                  <BookOpen className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-semibold text-card-foreground group-hover:text-primary transition-colors">{c.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{c.desc}</p>
-                <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{c.lessons} bài</span>
-                  <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{c.students}</span>
-                </div>
-                <div className="mt-4 flex items-center text-sm font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                  Bắt đầu học <ArrowRight className="ml-1 h-4 w-4" />
-                </div>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
+        {/* Xử lý hiển thị khi đang tải dữ liệu */}
+        {isLoading ? (
+          <div className="flex justify-center items-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {courses.map((c, i) => (
+              <motion.div
+                key={c.id}
+                initial="hidden" whileInView="visible" viewport={{ once: true }}
+                variants={fadeUp} custom={i}
+              >
+                <Link to="/workspace" className="group block rounded-xl border border-border bg-card p-6 shadow-card hover:shadow-elevated transition-all duration-300 hover:-translate-y-1">
+                  <div className="flex items-center justify-between mb-4">
+                    {/* Thêm fallback màu sắc trong trường hợp Level trả về không khớp key */}
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${levelColor[c.level] || 'bg-primary/10 text-primary'}`}>
+                      {c.level}
+                    </span>
+                    <BookOpen className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-card-foreground group-hover:text-primary transition-colors">{c.title}</h3>
+                  {/* Sử dụng c.description thay cho c.desc để khớp với C# Model */}
+                  <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{c.description}</p>
+                  <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{c.lessons || 10} bài</span>
+                    <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{c.students || 100}</span>
+                  </div>
+                  <div className="mt-4 flex items-center text-sm font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                    Bắt đầu học <ArrowRight className="ml-1 h-4 w-4" />
+                  </div>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        )}
+        
+        {/* Hiển thị thông báo nếu Database trống */}
+        {!isLoading && courses.length === 0 && (
+          <div className="text-center text-muted-foreground mt-8">
+            Hiện chưa có khóa học nào trong hệ thống.
+          </div>
+        )}
       </div>
     </div>
   );

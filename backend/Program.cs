@@ -11,6 +11,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // 2. Thêm Controllers
 builder.Services.AddControllers();
 
+// code editor này để Backend có thể đi gọi các API khác (Piston, Gemini...)
+builder.Services.AddHttpClient();
+
 // 3. Cấu hình Swagger (Giao diện test API)
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

@@ -12,4 +12,7 @@ public class AppDbContext : DbContext
     // Các DbSet này sẽ tương ứng với các bảng trong MySQL
     public DbSet<User> Users { get; set; }
     public DbSet<Course> Courses { get; set; }
+
+    public DbSet<Lesson> Lessons { get; set; }
+    public DbSet<Exercise> Exercises { get; set; }
 }
