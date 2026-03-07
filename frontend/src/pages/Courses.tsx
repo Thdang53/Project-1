@@ -58,7 +58,7 @@ const Courses = () => {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary">
               <Code2 className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold text-foreground">CodeAI</span>
+            <span className="text-xl font-bold text-foreground">AI Learning Hub</span>
           </Link>
           <div className="flex items-center gap-3">
             <Link to="/login"><Button variant="ghost" size="sm">Đăng nhập</Button></Link>

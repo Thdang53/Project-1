@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
-using System.Text;
+using System.Text.Json;
+using backend.Models;
+using backend.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace backend.Controllers
 {
@@ -8,56 +11,211 @@ namespace backend.Controllers
     [ApiController]
     public class CodeExecutionController : ControllerBase
     {
-        public class CodeRequest
+        private readonly string _tempFolder;
+        private readonly AppDbContext _context;
+
+        public CodeExecutionController(AppDbContext context)
         {
-            public string Language { get; set; } = "python";
-            public string Code { get; set; } = string.Empty;
-            public string Input { get; set; } = string.Empty; // Chấp nhận dữ liệu nhập từ bàn phím
+            _context = context;
+            _tempFolder = Path.Combine(Path.GetTempPath(), "AISandbox");
+            if (!Directory.Exists(_tempFolder))
+            {
+                Directory.CreateDirectory(_tempFolder);
+            }
         }
 
         [HttpPost("run")]
-        public IActionResult RunCode([FromBody] CodeRequest request)
+        public async Task<IActionResult> RunCode([FromBody] CodeRequest request)
         {
-            string dockerImage = "";
-            string dockerCommand = "";
-
-            // KỸ THUẬT: Mã hóa Code thành Base64 để truyền an toàn qua CommandLine của Docker
-            // Giúp tránh mọi lỗi liên quan đến ký tự đặc biệt (" ", ', \n) trong code
-            string base64Code = Convert.ToBase64String(Encoding.UTF8.GetBytes(request.Code));
-
-            // Phân loại ngôn ngữ
-            switch (request.Language.ToLower())
+            string fileExtension = request.Language switch
             {
-                case "python":
-                case "py":
-                    dockerImage = "python:3.10-alpine";
-                    dockerCommand = $"sh -c \"echo {base64Code} | base64 -d > main.py && python main.py\"";
-                    break;
-                case "javascript":
-                case "js":
-                    dockerImage = "node:alpine";
-                    dockerCommand = $"sh -c \"echo {base64Code} | base64 -d > main.js && node main.js\"";
-                    break;
-                case "cpp":
-                case "c++":
-                    dockerImage = "gcc:latest";
-                    dockerCommand = $"sh -c \"echo {base64Code} | base64 -d > main.cpp && g++ main.cpp -o main && ./main\"";
-                    break;
-                case "java":
-                    dockerImage = "eclipse-temurin:17-alpine";
-                    dockerCommand = $"sh -c \"echo {base64Code} | base64 -d > Main.java && javac Main.java && java Main\"";
-                    break;
-                default:
-                    return BadRequest(new { output = $"Hệ thống chưa hỗ trợ ngôn ngữ: {request.Language}" });
+                "python" => "py",
+                "cpp" => "cpp",
+                "java" => "java",
+                "javascript" => "js",
+                _ => "txt"
+            };
+
+            if (fileExtension == "txt")
+            {
+                return BadRequest(new { output = "Ngôn ngữ không được hỗ trợ." });
             }
+
+            string fileName = $"code_{Guid.NewGuid()}.{fileExtension}";
+            string filePath = Path.Combine(_tempFolder, fileName);
+            await System.IO.File.WriteAllTextAsync(filePath, request.Code);
+
+            string dockerImage = request.Language switch
+            {
+                "python" => "python:3.9-slim",
+                "cpp" => "gcc:latest",
+                "java" => "openjdk:17-slim",
+                "javascript" => "node:18-slim",
+                _ => ""
+            };
+
+            string command = request.Language switch
+            {
+                "python" => $"python /app/{fileName}",
+                "cpp" => $"g++ /app/{fileName} -o /app/out && /app/out",
+                "java" => $"java /app/{fileName}",
+                "javascript" => $"node /app/{fileName}",
+                _ => ""
+            };
 
             try
             {
-                // THIẾT LẬP SANDBOX
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "docker",
-                    Arguments = $"run --rm -i --net none --memory=\"256m\" {dockerImage} {dockerCommand}",
+                    Arguments = $"run --rm -v \"{_tempFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(processStartInfo);
+                if (process == null)
+                {
+                    return StatusCode(500, new { output = "Không thể khởi động Sandbox." });
+                }
+
+                if (!string.IsNullOrEmpty(request.Input))
+                {
+                    using (var streamWriter = process.StandardInput)
+                    {
+                        await streamWriter.WriteAsync(request.Input);
+                    }
+                }
+
+                if (!process.WaitForExit(5000))
+                {
+                    process.Kill();
+                    return Ok(new { output = "LỖI: Time Limit Exceeded (Chạy quá 5 giây)." });
+                }
+
+                string output = await process.StandardOutput.ReadToEndAsync();
+                string error = await process.StandardError.ReadToEndAsync();
+
+                if (!string.IsNullOrEmpty(error))
+                {
+                    return Ok(new { output = $"LỖI BIÊN DỊCH/THỰC THI:\n{error}" });
+                }
+
+                return Ok(new { output });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { output = $"LỖI MÁY CHỦ: {ex.Message}" });
+            }
+            finally
+            {
+                if (System.IO.File.Exists(filePath))
+                {
+                    System.IO.File.Delete(filePath);
+                }
+            }
+        }
+
+        [HttpPost("submit")]
+        public async Task<IActionResult> SubmitCode([FromBody] SubmitCodeRequest request)
+        {
+            var exercise = await _context.Exercises.FindAsync(request.ExerciseId);
+            if (exercise == null)
+            {
+                return NotFound(new { message = "Không tìm thấy bài tập." });
+            }
+
+            if (string.IsNullOrEmpty(exercise.TestCases))
+            {
+                return BadRequest(new { message = "Bài tập này chưa được cấu hình Test Case." });
+            }
+
+            List<TestCase> testCases;
+            try
+            {
+                testCases = JsonSerializer.Deserialize<List<TestCase>>(exercise.TestCases, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch
+            {
+                return StatusCode(500, new { message = "Dữ liệu Test Case trong DB bị lỗi định dạng." });
+            }
+
+            var results = new List<TestCaseResult>();
+            bool allPassed = true;
+
+            for (int i = 0; i < testCases.Count; i++)
+            {
+                var tc = testCases[i];
+                var execResult = await RunCodeInDockerAsync(request.Language, request.Code, tc.Input);
+
+                bool passed = false;
+                if (!execResult.IsError)
+                {
+                    passed = execResult.Output.Trim() == tc.ExpectedOutput.Trim();
+                }
+
+                if (!passed) allPassed = false;
+
+                results.Add(new TestCaseResult
+                {
+                    Id = i + 1,
+                    Passed = passed,
+                    Input = tc.Input,
+                    ExpectedOutput = tc.ExpectedOutput,
+                    ActualOutput = execResult.IsError ? execResult.Error : execResult.Output.Trim()
+                });
+            }
+
+            return Ok(new
+            {
+                status = allPassed ? "Accepted" : "Wrong Answer",
+                totalTests = testCases.Count,
+                passedTests = results.Count(r => r.Passed),
+                results = results
+            });
+        }
+
+        private async Task<(string Output, string Error, bool IsError)> RunCodeInDockerAsync(string language, string code, string input)
+        {
+             string fileExtension = language switch
+            {
+                "python" => "py",
+                "cpp" => "cpp",
+                "java" => "java",
+                "javascript" => "js",
+                _ => "txt"
+            };
+
+            string fileName = $"code_{Guid.NewGuid()}.{fileExtension}";
+            string filePath = Path.Combine(_tempFolder, fileName);
+            await System.IO.File.WriteAllTextAsync(filePath, code);
+
+            string dockerImage = language switch
+            {
+                "python" => "python:3.9-slim",
+                "cpp" => "gcc:latest",
+                "java" => "openjdk:17-slim",
+                "javascript" => "node:18-slim",
+                _ => ""
+            };
+
+            string command = language switch
+            {
+                "python" => $"python /app/{fileName}",
+                "cpp" => $"g++ /app/{fileName} -o /app/out && /app/out",
+                "java" => $"java /app/{fileName}",
+                "javascript" => $"node /app/{fileName}",
+                _ => ""
+            };
+
+            try
+            {
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = "docker",
+                    Arguments = $"run -i --rm -v \"{_tempFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -65,43 +223,70 @@ namespace backend.Controllers
                     CreateNoWindow = true
                 };
 
-                using var process = new Process { StartInfo = processStartInfo };
-                process.Start();
+                using var process = Process.Start(processStartInfo);
+                if (process == null)
+                {
+                    return ("", "Không thể khởi động Sandbox.", true);
+                }
 
-                // TRUYỀN INPUT VÀO BÀN PHÍM ẢO CỦA DOCKER
-                if (!string.IsNullOrEmpty(request.Input))
+                if (!string.IsNullOrEmpty(input))
                 {
                     using (var streamWriter = process.StandardInput)
                     {
-                        streamWriter.Write(request.Input);
+                        await streamWriter.WriteAsync(input);
                     }
                 }
-                else
-                {
-                    process.StandardInput.Close(); // Đóng luồng nếu không có Input để tránh treo máy
-                }
 
-                // C++ và Java cần thời gian biên dịch nên để giới hạn 10 giây
-                process.WaitForExit(10000);
-
-                if (!process.HasExited)
+                if (!process.WaitForExit(5000))
                 {
                     process.Kill();
-                    return Ok(new { output = "LỖI: Thời gian chạy quá lâu (vượt quá 10s) hoặc lặp vô hạn. Sandbox đã tiêu hủy." });
+                    return ("", "Time Limit Exceeded", true);
                 }
 
-                // Đọc kết quả màn hình đen
-                string output = process.StandardOutput.ReadToEnd();
-                string error = process.StandardError.ReadToEnd();
+                string output = await process.StandardOutput.ReadToEndAsync();
+                string error = await process.StandardError.ReadToEndAsync();
 
-                string finalOutput = string.IsNullOrEmpty(error) ? output : output + "\n[LỖI]:\n" + error;
+                if (!string.IsNullOrEmpty(error))
+                {
+                    return ("", error, true);
+                }
 
-                return Ok(new { output = finalOutput.Trim() });
+                return (output, "", false);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { output = "Lỗi hệ thống Sandbox: " + ex.Message });
+                return ("", ex.Message, true);
+            }
+            finally
+            {
+                if (System.IO.File.Exists(filePath))
+                {
+                    System.IO.File.Delete(filePath);
+                }
             }
         }
+    }
+
+    // Các class chứa dữ liệu
+    public class CodeRequest
+    {
+        public string Language { get; set; } = string.Empty;
+        public string Code { get; set; } = string.Empty;
+        public string Input { get; set; } = string.Empty;
+    }
+
+    public class TestCase
+    {
+        public string Input { get; set; } = string.Empty;
+        public string ExpectedOutput { get; set; } = string.Empty;
+    }
+
+    public class TestCaseResult
+    {
+        public int Id { get; set; }
+        public bool Passed { get; set; }
+        public string Input { get; set; } = string.Empty;
+        public string ExpectedOutput { get; set; } = string.Empty;
+        public string ActualOutput { get; set; } = string.Empty;
     }
 }

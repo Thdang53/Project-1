@@ -16,16 +16,49 @@ namespace backend.Controllers
             _context = context;
         }
 
-        // Lấy bài tập đầu tiên trong hệ thống để hiển thị lên Workspace
-        // GET: api/Exercises/first
+        // GET: api/Exercises
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Exercise>>> GetExercises()
+        {
+            if (_context.Exercises == null)
+            {
+                return NotFound("Không tìm thấy bảng Exercises trong CSDL.");
+            }
+            return await _context.Exercises.ToListAsync();
+        }
+
+        // GET: api/Exercises/5
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Exercise>> GetExercise(int id)
+        {
+            if (_context.Exercises == null)
+            {
+                return NotFound();
+            }
+            var exercise = await _context.Exercises.FindAsync(id);
+
+            if (exercise == null)
+            {
+                return NotFound();
+            }
+
+            return exercise;
+        }
+        
+        // Cứ giữ lại cái GET "first" để trang Workspace mặc định có bài nếu không chọn từ list
         [HttpGet("first")]
         public async Task<ActionResult<Exercise>> GetFirstExercise()
         {
+            if (_context.Exercises == null)
+            {
+                return NotFound(new { message = "Chưa có kết nối Database" });
+            }
+
             var exercise = await _context.Exercises.FirstOrDefaultAsync();
-            
+
             if (exercise == null)
             {
-                return NotFound(new { message = "Chưa có bài tập nào trong database." });
+                return NotFound(new { message = "Không có bài tập nào trong DB" });
             }
 
             return Ok(exercise);

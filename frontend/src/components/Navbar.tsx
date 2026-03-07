@@ -1,87 +1,51 @@
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Code2, LogOut, User } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Code2, LogIn } from "lucide-react";
 
 interface NavbarProps {
-  variant?: "default" | "transparent";
+  variant?: "transparent" | "default";
 }
 
 const Navbar = ({ variant = "default" }: NavbarProps) => {
-  const { user, signOut } = useAuth();
-  const [isStaff, setIsStaff] = useState(false);
-
-  useEffect(() => {
-    if (!user) { setIsStaff(false); return; }
-    const check = async () => {
-      const { data: admin } = await supabase.rpc("has_role", { _user_id: user.id, _role: "admin" as const });
-      const { data: teacher } = await supabase.rpc("has_role", { _user_id: user.id, _role: "teacher" as const });
-      setIsStaff(!!admin || !!teacher);
-    };
-    check();
-  }, [user]);
-
-  const dashboardLink = isStaff ? "/dashboard" : "/student-dashboard";
+  const isTransparent = variant === "transparent";
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 border-b border-border/50 ${
-      variant === "transparent" ? "bg-background/80 backdrop-blur-xl" : "bg-background"
-    }`}>
-      <div className="container mx-auto flex h-16 items-center justify-between px-6">
-        <Link to="/" className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary">
-            <Code2 className="h-5 w-5 text-primary-foreground" />
+    <nav className={`w-full z-50 transition-all duration-300 ${isTransparent ? 'absolute top-0 bg-transparent' : 'bg-background border-b border-border'}`}>
+      <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+        {/* Logo */}
+        <Link to="/" className="flex items-center gap-2 group">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary group-hover:opacity-90 transition-opacity">
+            <Code2 className="h-5 w-5 text-white" />
           </div>
-          <span className="text-xl font-bold text-foreground">CodeAI</span>
+          <span className={`font-bold text-xl tracking-tight ${isTransparent ? 'text-primary-foreground' : 'text-foreground'}`}>
+            AI Learning Hub
+          </span>
         </Link>
 
+        {/* Các Menu chính - Đã sửa lại đường dẫn */}
         <div className="hidden md:flex items-center gap-8">
-          <Link to="/courses" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Khóa học</Link>
-          <Link to="/workspace" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Workspace</Link>
-          <Link to={dashboardLink} className="text-sm text-muted-foreground hover:text-foreground transition-colors">Dashboard</Link>
-          <a href="/#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Tính năng</a>
+          <Link to="/" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+            Trang chủ
+          </Link>
+          
+          {/* Sinh viên click vào đây sẽ ra danh sách bài tập, không bị nhảy vào màn hình code trống */}
+          <Link to="/student-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+            Không gian học tập
+          </Link>
+
+          {/* Dành cho giáo viên */}
+          <Link to="/dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+            Quản lý (Admin)
+          </Link>
         </div>
 
-        <div className="flex items-center gap-3">
-          {user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <User className="h-4 w-4" />
-                  </div>
-                  <span className="hidden sm:inline text-sm">{user.email?.split("@")[0]}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem className="text-muted-foreground text-xs cursor-default">
-                  {user.email}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={signOut} className="text-destructive cursor-pointer">
-                  <LogOut className="mr-2 h-4 w-4" /> Đăng xuất
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <>
-              <Link to="/login">
-                <Button variant="ghost" size="sm">Đăng nhập</Button>
-              </Link>
-              <Link to="/login">
-                <Button size="sm" className="bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-glow">
-                  Bắt đầu học
-                </Button>
-              </Link>
-            </>
-          )}
+        {/* Nút Đăng nhập góc phải */}
+        <div className="flex items-center gap-4">
+          <Link to="/login">
+            <Button variant={isTransparent ? "outline" : "default"} className={isTransparent ? "text-primary-foreground border-primary-foreground/20 hover:bg-primary-foreground/10" : ""}>
+              <LogIn className="mr-2 h-4 w-4" /> Đăng nhập
+            </Button>
+          </Link>
         </div>
       </div>
     </nav>

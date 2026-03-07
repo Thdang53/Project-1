@@ -17,7 +17,8 @@ public class Exercise
 
     public string Description { get; set; } = string.Empty; // Đề bài tập
 
-    public string TestCases { get; set; } = "[]"; // Lưu dưới dạng chuỗi JSON
+    public string TestCases { get; set; } = string.Empty;
+
 
     [MaxLength(50)]
     public string Difficulty { get; set; } = "Cơ bản";

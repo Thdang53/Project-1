@@ -1,9 +1,13 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Code2, Send, Play, Upload, BrainCircuit, ChevronRight, MessageSquare, Terminal as TerminalIcon, BookOpen, X, Loader2 } from "lucide-react";
+import { 
+  Code2, Send, Play, Upload, BrainCircuit, 
+  ChevronRight, MessageSquare, Terminal as TerminalIcon, 
+  BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code
+} from "lucide-react";
 import Editor from "@monaco-editor/react";
-import ReactMarkdown from "react-markdown"; // Import thư viện render Markdown
+import ReactMarkdown from "react-markdown"; 
 
 interface Exercise {
   id: number;
@@ -14,25 +18,53 @@ interface Exercise {
   difficulty: string;
 }
 
+interface TestCaseResult {
+  id: number;
+  passed: boolean;
+  input: string;
+  expectedOutput: string;
+  actualOutput: string;
+}
+
+interface SubmitResponse {
+  status: string;
+  totalTests: number;
+  passedTests: number;
+  results: TestCaseResult[];
+  message?: string;
+}
+
 const defaultCode = `# Code của bạn ở đây...
-for i in range(10)
-  print('Thieu dau hai cham roi')
+def solve():
+  # Viết logic của bạn
+  pass
 `;
 
+// LƯU Ý: THAY ĐỔI URL API NÀY NẾU CẦN THIẾT
+const API_BASE_URL = "http://localhost:5043";
+
 const Workspace = () => {
+  const [searchParams] = useSearchParams();
+  const exerciseId = searchParams.get("id");
+
   const [language, setLanguage] = useState("python");
   const [code, setCode] = useState(defaultCode);
-  const [activeTab, setActiveTab] = useState<"output" | "ai">("output");
+  
+  const [activeTab, setActiveTab] = useState<"output" | "ai" | "grading">("output");
   const [showChat, setShowChat] = useState(true);
   
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // States cho việc chạy code
   const [output, setOutput] = useState(">>> Chờ chạy code...");
   const [isExecuting, setIsExecuting] = useState(false);
+  
+  // STATE MỚI: Lưu dữ liệu đầu vào người dùng tự nhập để test
+  const [customInput, setCustomInput] = useState("");
 
-  // States cho tính năng AI
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState<SubmitResponse | null>(null);
+
   const [aiFeedback, setAiFeedback] = useState("Nhấn 'Hỏi AI' để nhận phân tích chi tiết về code của bạn.");
   const [isAILoading, setIsAILoading] = useState(false);
   
@@ -43,7 +75,11 @@ const Workspace = () => {
   const [isChatLoading, setIsChatLoading] = useState(false);
 
   useEffect(() => {
-    fetch("http://localhost:5043/api/Exercises/first")
+    const fetchUrl = exerciseId 
+      ? `${API_BASE_URL}/api/Exercises/${exerciseId}`
+      : `${API_BASE_URL}/api/Exercises/first`;
+
+    fetch(fetchUrl)
       .then((res) => res.json())
       .then((data) => {
         if (!data.message) setExercise(data);
@@ -53,19 +89,19 @@ const Workspace = () => {
         console.error("Lỗi:", error);
         setIsLoading(false);
       });
-  }, []);
+  }, [exerciseId]);
 
-  // 1. Hàm Chạy Code
   const handleRunCode = async () => {
     setIsExecuting(true);
     setActiveTab("output");
     setOutput(">>> Đang đưa code vào Sandbox để chạy...");
 
     try {
-      const response = await fetch("http://localhost:5043/api/CodeExecution/run", {
+      const response = await fetch(`${API_BASE_URL}/api/CodeExecution/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language: language, code: code, input: "" }),
+        // Gửi kèm customInput lên Server
+        body: JSON.stringify({ language: language, code: code, input: customInput }),
       });
       const data = await response.json();
       setOutput(data.output || "Không có kết quả in ra màn hình.");
@@ -76,20 +112,52 @@ const Workspace = () => {
     }
   };
 
-  // 2. Hàm gọi AI Phân tích Code (Nút Hỏi AI)
+  const handleSubmitCode = async () => {
+    if (!exercise) return;
+    
+    setIsSubmitting(true);
+    setActiveTab("grading");
+    setSubmitResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/CodeExecution/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          language: language, 
+          code: code, 
+          exerciseId: exercise.id 
+        }),
+      });
+      
+      const data = await response.json();
+      setSubmitResult(data);
+    } catch (error) {
+      setSubmitResult({
+        status: "Error",
+        totalTests: 0,
+        passedTests: 0,
+        results: [],
+        message: "Không thể kết nối đến máy chủ chấm điểm."
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleAIFeedback = async () => {
     setActiveTab("ai");
     setIsAILoading(true);
     setAiFeedback("Thầy đang đọc code của em... Đợi một chút nhé ⏳");
 
     try {
-      const response = await fetch("http://localhost:5043/api/AIAssistant/analyze", {
+      const response = await fetch(`${API_BASE_URL}/api/AIAssistant/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: code,
           language: language,
-          errorOutput: output.includes("LỖI") ? output : "", // Gửi kèm lỗi màn hình đen nếu có
+          errorOutput: output.includes("LỖI") ? output : "", 
           userQuestion: ""
         }),
       });
@@ -102,7 +170,6 @@ const Workspace = () => {
     }
   };
 
-  // 3. Hàm Chat với AI
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
     const userMsg = chatInput;
@@ -111,7 +178,7 @@ const Workspace = () => {
     setIsChatLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5043/api/AIAssistant/analyze", {
+      const response = await fetch(`${API_BASE_URL}/api/AIAssistant/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -134,14 +201,14 @@ const Workspace = () => {
     <div className="h-screen flex flex-col bg-editor">
       <div className="flex h-12 items-center justify-between border-b border-editor-line px-4">
         <div className="flex items-center gap-3">
-          <Link to="/" className="flex items-center gap-2">
+          <Link to="/student-dashboard" className="flex items-center gap-2 hover:opacity-80 transition">
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-primary">
               <Code2 className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-sm font-bold text-editor-foreground">CodeAI</span>
+            <span className="text-sm font-bold text-editor-foreground">Trở về</span>
           </Link>
           <span className="text-editor-foreground/30">|</span>
-          <span className="text-sm text-editor-foreground/60">
+          <span className="text-sm font-medium text-editor-foreground">
             {exercise ? exercise.title : "Đang tải..."}
           </span>
         </div>
@@ -157,7 +224,6 @@ const Workspace = () => {
             <option value="javascript">JavaScript</option>
           </select>
 
-          {/* Nút Hỏi AI */}
           <Button 
             onClick={handleAIFeedback}
             disabled={isAILoading}
@@ -169,25 +235,30 @@ const Workspace = () => {
           
           <Button 
             onClick={handleRunCode}
-            disabled={isExecuting}
+            disabled={isExecuting || isSubmitting}
             size="sm" className="bg-success text-success-foreground hover:bg-success/90 h-8"
           >
             {isExecuting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
             Chạy code
           </Button>
-          <Button size="sm" className="bg-gradient-primary text-primary-foreground hover:opacity-90 h-8">
-            <Upload className="mr-1.5 h-4 w-4" /> Nộp bài
+          
+          <Button 
+            onClick={handleSubmitCode}
+            disabled={isExecuting || isSubmitting}
+            size="sm" className="bg-gradient-primary text-primary-foreground hover:opacity-90 h-8"
+          >
+            {isSubmitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
+            Nộp bài
           </Button>
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* CỘT TRÁI: Đề bài & Chat */}
         <div className="w-[30%] min-w-[300px] border-r border-editor-line flex flex-col">
           <div className={`${showChat ? "flex-1" : "flex-[2]"} overflow-auto p-5 border-b border-editor-line`}>
             <div className="flex items-center gap-2 text-primary mb-4">
               <BookOpen className="h-5 w-5" />
-              <h2 className="font-semibold text-editor-foreground">Nội dung thực hành</h2>
+              <h2 className="font-semibold text-editor-foreground">Đề bài</h2>
             </div>
             <div className="space-y-4 text-sm text-editor-foreground/80 leading-relaxed">
               {isLoading ? (
@@ -195,12 +266,7 @@ const Workspace = () => {
                   <div className="h-4 bg-editor-line rounded w-3/4"></div>
                 </div>
               ) : exercise ? (
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-primary flex items-center gap-1.5">
-                      <ChevronRight className="h-4 w-4" /> Đề bài
-                    </h3>
-                  </div>
+                <div className="prose prose-invert max-w-none">
                   <p className="whitespace-pre-wrap">{exercise.description}</p>
                 </div>
               ) : (
@@ -252,7 +318,6 @@ const Workspace = () => {
           )}
         </div>
 
-        {/* CỘT GIỮA: Editor */}
         <div className="flex-1 flex flex-col">
           <Editor
             height="100%"
@@ -264,7 +329,6 @@ const Workspace = () => {
           />
         </div>
 
-        {/* CỘT PHẢI: Output & AI Feedback */}
         <div className="w-[30%] min-w-[300px] border-l border-editor-line flex flex-col">
           <div className="flex border-b border-editor-line">
             <button
@@ -276,6 +340,14 @@ const Workspace = () => {
               <TerminalIcon className="h-4 w-4" /> Output
             </button>
             <button
+              onClick={() => setActiveTab("grading")}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
+                activeTab === "grading" ? "text-success border-b-2 border-success" : "text-editor-foreground/40"
+              }`}
+            >
+              <ListChecks className="h-4 w-4" /> Chấm điểm
+            </button>
+            <button
               onClick={() => setActiveTab("ai")}
               className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
                 activeTab === "ai" ? "text-primary border-b-2 border-primary" : "text-editor-foreground/40"
@@ -285,12 +357,90 @@ const Workspace = () => {
             </button>
           </div>
 
-          <div className="flex-1 overflow-auto p-4">
-            {activeTab === "output" ? (
-              <pre className="font-mono text-sm text-editor-foreground/80 whitespace-pre-wrap">{output}</pre>
-            ) : (
+          <div className="flex-1 overflow-auto p-4 flex flex-col">
+            {activeTab === "output" && (
+              <>
+                <pre className="font-mono text-sm text-editor-foreground/80 whitespace-pre-wrap flex-1">{output}</pre>
+                
+                {/* KHU VỰC NHẬP CUSTOM INPUT */}
+                <div className="mt-4 pt-4 border-t border-editor-line">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-editor-foreground/70 mb-2">
+                    <Code className="h-3.5 w-3.5" /> Dữ liệu đầu vào (Custom Input)
+                  </label>
+                  <textarea 
+                    value={customInput}
+                    onChange={(e) => setCustomInput(e.target.value)}
+                    placeholder="Nhập dữ liệu vào đây nếu code của bạn dùng hàm input()..."
+                    className="w-full h-24 bg-background border border-editor-line rounded-md p-2 text-sm font-mono text-editor-foreground focus:outline-none focus:border-primary/50 resize-none"
+                  />
+                </div>
+              </>
+            )}
+            
+            {activeTab === "grading" && (
+              <div className="space-y-4">
+                {!submitResult && !isSubmitting && (
+                  <p className="text-sm text-editor-foreground/60 text-center mt-10">Bấm nút "Nộp bài" để hệ thống chấm điểm code của bạn.</p>
+                )}
+                
+                {isSubmitting && (
+                  <div className="flex flex-col items-center justify-center space-y-3 mt-10">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm text-editor-foreground/80">Hệ thống đang chạy Test Case...</p>
+                  </div>
+                )}
+
+                {submitResult && submitResult.message && (
+                  <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+                    {submitResult.message}
+                  </div>
+                )}
+
+                {submitResult && !submitResult.message && (
+                  <>
+                    <div className={`p-4 rounded-lg border ${submitResult.status === 'Accepted' ? 'bg-success/10 border-success/20' : 'bg-destructive/10 border-destructive/20'}`}>
+                      <h3 className={`text-lg font-bold ${submitResult.status === 'Accepted' ? 'text-success' : 'text-destructive'}`}>
+                        {submitResult.status === 'Accepted' ? 'Hoàn thành xuất sắc!' : 'Sai kết quả'}
+                      </h3>
+                      <p className="text-sm text-editor-foreground/80 mt-1">
+                        Vượt qua: <span className="font-bold">{submitResult.passedTests}/{submitResult.totalTests}</span> Test Cases
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      {submitResult.results.map((tc) => (
+                        <div key={tc.id} className="p-3 rounded-md border border-editor-line bg-editor/50">
+                          <div className="flex items-center gap-2 mb-2">
+                            {tc.passed ? (
+                              <CheckCircle2 className="h-4 w-4 text-success" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-destructive" />
+                            )}
+                            <span className="text-sm font-semibold text-editor-foreground">Test Case {tc.id}</span>
+                          </div>
+                          
+                          {!tc.passed && (
+                            <div className="text-xs space-y-1.5 mt-2 bg-background p-2 rounded border border-editor-line font-mono">
+                              <div className="text-editor-foreground/60">Đầu vào (Input):</div>
+                              <div className="text-editor-foreground">{tc.input || "Không có"}</div>
+                              
+                              <div className="text-editor-foreground/60 mt-2">Kết quả mong đợi:</div>
+                              <div className="text-success">{tc.expectedOutput}</div>
+                              
+                              <div className="text-editor-foreground/60 mt-2">Code của bạn in ra:</div>
+                              <div className="text-destructive whitespace-pre-wrap">{tc.actualOutput || "Không in ra gì cả"}</div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {activeTab === "ai" && (
               <div className="text-sm text-editor-foreground/80 prose prose-invert max-w-none">
-                {/* Render Markdown cực đẹp ở đây */}
                 <ReactMarkdown>{aiFeedback}</ReactMarkdown>
               </div>
             )}

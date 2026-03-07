@@ -1,245 +1,112 @@
-import { useEffect, useState } from "react";
-import Navbar from "@/components/Navbar";
-import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { BookOpen, Trophy, Clock, TrendingUp, Play, CheckCircle2 } from "lucide-react";
-import { motion } from "framer-motion";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
-import type { Tables } from "@/integrations/supabase/types";
+import { Code2, BookOpen, Star, Clock, Trophy } from "lucide-react";
 
-type Course = Tables<"courses">;
-
-interface EnrolledCourse extends Course {
-  status: string;
-  score: number | null;
-  completed_at: string | null;
-  lessonsCompleted: number;
+interface Exercise {
+  id: number;
+  lessonId: number;
+  title: string;
+  description: string;
+  difficulty: string;
 }
 
 const StudentDashboard = () => {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [enrolledCourses, setEnrolledCourses] = useState<EnrolledCourse[]>([]);
-  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
-  const [displayName, setDisplayName] = useState("");
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Khởi tạo công cụ chuyển trang
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (!user) return;
-    fetchData();
-  }, [user]);
+    // Xin danh sách bài từ Database. LƯU Ý CỔNG 5043 NHÉ
+    fetch("http://localhost:5043/api/Exercises")
+      .then((res) => res.json())
+      .then((data) => {
+        setExercises(data);
+        setIsLoading(false);
+      })
+      .catch((error) => {
+        console.error("Lỗi:", error);
+        setIsLoading(false);
+      });
+  }, []);
 
-  const fetchData = async () => {
-    if (!user) return;
-
-    // Fetch profile
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("user_id", user.id)
-      .single();
-    if (profile) setDisplayName(profile.display_name ?? user.email?.split("@")[0] ?? "");
-
-    // Fetch progress
-    const { data: progress } = await supabase
-      .from("learning_progress")
-      .select("course_id, status, score, completed_at, lesson_id")
-      .eq("user_id", user.id);
-
-    // Fetch all courses
-    const { data: allCourses } = await supabase
-      .from("courses")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (!allCourses) {
-      setLoading(false);
-      return;
+  const getDifficultyColor = (diff: string) => {
+    switch (diff?.toLowerCase()) {
+      case 'easy': return 'bg-green-100 text-green-700 border-green-200';
+      case 'medium': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+      case 'hard': return 'bg-red-100 text-red-700 border-red-200';
+      default: return 'bg-gray-100 text-gray-700 border-gray-200';
     }
-
-    const enrolledCourseIds = new Set(progress?.map(p => p.course_id) ?? []);
-
-    // Build enrolled courses with progress info
-    const enrolled: EnrolledCourse[] = [];
-    const courseProgressMap = new Map<string, typeof progress>();
-
-    progress?.forEach(p => {
-      const existing = courseProgressMap.get(p.course_id) ?? [];
-      existing.push(p);
-      courseProgressMap.set(p.course_id, existing);
-    });
-
-    allCourses.forEach(course => {
-      if (enrolledCourseIds.has(course.id)) {
-        const items = courseProgressMap.get(course.id) ?? [];
-        const completed = items.filter(i => i.status === "completed");
-        const latestCompleted = completed.sort((a, b) =>
-          (b.completed_at ?? "").localeCompare(a.completed_at ?? "")
-        )[0];
-        const bestScore = Math.max(...items.map(i => i.score ?? 0), 0);
-        const isCompleted = items.some(i => i.status === "completed" && !i.lesson_id);
-
-        enrolled.push({
-          ...course,
-          status: isCompleted ? "completed" : "in_progress",
-          score: bestScore > 0 ? bestScore : null,
-          completed_at: latestCompleted?.completed_at ?? null,
-          lessonsCompleted: completed.length,
-        });
-      }
-    });
-
-    setEnrolledCourses(enrolled);
-    setAvailableCourses(allCourses.filter(c => !enrolledCourseIds.has(c.id)));
-    setLoading(false);
   };
-
-  const totalCourses = enrolledCourses.length;
-  const completedCourses = enrolledCourses.filter(c => c.status === "completed").length;
-  const inProgressCourses = totalCourses - completedCourses;
-  const avgScore = enrolledCourses.filter(c => c.score !== null).length > 0
-    ? Math.round(enrolledCourses.reduce((sum, c) => sum + (c.score ?? 0), 0) / enrolledCourses.filter(c => c.score !== null).length)
-    : 0;
-
-  const levelLabel: Record<string, string> = { basic: "Cơ bản", intermediate: "Trung bình", advanced: "Nâng cao" };
-  const statusConfig: Record<string, { label: string; variant: "default" | "secondary"; icon: typeof CheckCircle2 }> = {
-    completed: { label: "Hoàn thành", variant: "default", icon: CheckCircle2 },
-    in_progress: { label: "Đang học", variant: "secondary", icon: Play },
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      <div className="container mx-auto px-6 pt-24 pb-16">
-        {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground">
-            Xin chào, <span className="text-gradient-primary">{displayName}</span> 👋
-          </h1>
-          <p className="mt-1 text-muted-foreground">Theo dõi tiến độ học tập và khám phá khóa học mới</p>
-        </motion.div>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+        <div className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+              <Code2 className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-xl font-bold text-gray-900 tracking-tight hover:text-primary transition-colors">AI Learning Hub</span>
+          </Link>
+        </div>
+        <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 text-amber-700 rounded-full font-medium text-sm">
+                <Trophy className="h-4 w-4" /> 120 điểm
+            </div>
+          <div className="h-9 w-9 rounded-full bg-gray-200 border-2 border-white shadow-sm flex items-center justify-center font-bold text-gray-600">
+            DMC
+          </div>
+        </div>
+      </header>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {[
-            { label: "Đã đăng ký", value: totalCourses, icon: BookOpen, color: "text-primary" },
-            { label: "Đang học", value: inProgressCourses, icon: Clock, color: "text-accent" },
-            { label: "Hoàn thành", value: completedCourses, icon: Trophy, color: "text-success" },
-            { label: "Điểm TB", value: avgScore > 0 ? avgScore : "—", icon: TrendingUp, color: "text-warning" },
-          ].map((stat, i) => (
-            <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-              <Card className="border-border shadow-card">
-                <CardContent className="p-5 flex items-center gap-4">
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-muted ${stat.color}`}>
-                    <stat.icon className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{stat.label}</p>
-                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
+      <main className="flex-1 max-w-6xl w-full mx-auto p-6 md:p-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Xin chào, Kỹ sư tương lai! 👋</h1>
+          <p className="text-gray-500 text-lg">Hôm nay bạn muốn thử sức với bài toán nào?</p>
         </div>
 
-        {/* Enrolled Courses */}
-        <div className="mb-10">
-          <h2 className="text-xl font-semibold text-foreground mb-4">Khóa học của tôi</h2>
-          {enrolledCourses.length === 0 ? (
-            <Card className="border-border shadow-card">
-              <CardContent className="py-12 text-center">
-                <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground mb-4">Bạn chưa đăng ký khóa học nào</p>
-                <Link to="/courses">
-                  <Button className="bg-gradient-primary text-primary-foreground hover:opacity-90">
-                    Khám phá khóa học
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {isLoading ? (
+            <div className="animate-pulse">Đang tải danh sách bài tập...</div>
+          ) : exercises.length > 0 ? (
+            exercises.map((ex) => (
+              <div key={ex.id} className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col h-full">
+                <div className="flex justify-between items-start mb-4">
+                  <div className={`px-2.5 py-1 rounded-md text-xs font-semibold border ${getDifficultyColor(ex.difficulty)}`}>
+                    {ex.difficulty ? ex.difficulty.toUpperCase() : 'CƠ BẢN'}
+                  </div>
+                  <div className="flex items-center gap-1 text-gray-400 text-sm">
+                    <Clock className="h-4 w-4" /> 15p
+                  </div>
+                </div>
+                
+                <h3 className="text-xl font-bold text-gray-900 mb-2 line-clamp-1" title={ex.title}>
+                  {ex.title}
+                </h3>
+                
+                <p className="text-gray-500 text-sm mb-6 flex-1 line-clamp-3">
+                  {ex.description}
+                </p>
+                
+                {/* NÚT CHUYỂN TRANG MANG THEO ID */}
+                <Button 
+                  onClick={() => navigate(`/workspace?id=${ex.id}`)} 
+                  className="w-full bg-primary hover:bg-primary/90 text-white font-medium rounded-xl h-11"
+                >
+                  <BookOpen className="mr-2 h-4 w-4" /> Bắt đầu làm bài
+                </Button>
+              </div>
+            ))
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {enrolledCourses.map((course, i) => {
-                const config = statusConfig[course.status] ?? statusConfig.in_progress;
-                const progressPct = course.total_lessons > 0
-                  ? Math.round((course.lessonsCompleted / course.total_lessons) * 100)
-                  : course.status === "completed" ? 100 : 0;
-
-                return (
-                  <motion.div key={course.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-                    <Card className="border-border shadow-card hover:shadow-elevated transition-shadow h-full flex flex-col">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <CardTitle className="text-base leading-tight">{course.title}</CardTitle>
-                          <Badge variant={config.variant} className="shrink-0 gap-1">
-                            <config.icon className="h-3 w-3" />
-                            {config.label}
-                          </Badge>
-                        </div>
-                        <CardDescription className="line-clamp-2 text-sm">{course.description ?? "Không có mô tả"}</CardDescription>
-                      </CardHeader>
-                      <CardContent className="flex-1 flex flex-col justify-end gap-3">
-                        <div className="flex gap-2">
-                          <Badge variant="outline" className="text-xs">{course.language}</Badge>
-                          <Badge variant="outline" className="text-xs">{levelLabel[course.level] ?? course.level}</Badge>
-                        </div>
-                        <div>
-                          <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                            <span>Tiến độ</span>
-                            <span>{progressPct}%</span>
-                          </div>
-                          <Progress value={progressPct} className="h-2" />
-                        </div>
-                        {course.score !== null && (
-                          <p className="text-sm text-muted-foreground">Điểm: <span className="font-semibold text-foreground">{course.score}</span></p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                );
-              })}
-            </div>
+             <div className="col-span-full text-center py-12">
+                 <p className="text-gray-500">Chưa có bài tập nào được tạo trong DB.</p>
+             </div>
           )}
         </div>
-
-        {/* Available Courses */}
-        {availableCourses.length > 0 && (
-          <div>
-            <h2 className="text-xl font-semibold text-foreground mb-4">Khóa học có sẵn</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {availableCourses.map((course, i) => (
-                <motion.div key={course.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-                  <Card className="border-border shadow-card hover:shadow-elevated transition-shadow h-full flex flex-col">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base leading-tight">{course.title}</CardTitle>
-                      <CardDescription className="line-clamp-2 text-sm">{course.description ?? "Không có mô tả"}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex-1 flex flex-col justify-end gap-3">
-                      <div className="flex gap-2">
-                        <Badge variant="outline" className="text-xs">{course.language}</Badge>
-                        <Badge variant="outline" className="text-xs">{levelLabel[course.level] ?? course.level}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{course.total_lessons} bài học</p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      </main>
     </div>
   );
 };

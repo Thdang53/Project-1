@@ -58,7 +58,6 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <Navbar variant="transparent" />
 
-      {/* Hero */}
       <section className="relative min-h-screen flex items-center overflow-hidden pt-16">
         <div className="absolute inset-0 bg-gradient-hero" />
         <div className="absolute inset-0 opacity-30"
@@ -94,30 +93,17 @@ const Index = () => {
             <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={3}
               className="mt-10 flex flex-wrap gap-4"
             >
-              <Link to="/workspace">
+              <Link to="/student-dashboard">
                 <Button size="lg" className="bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-glow text-base px-8 h-12">
-                  <Play className="mr-2 h-5 w-5" /> Thử ngay miễn phí
+                  <Play className="mr-2 h-5 w-5" /> Bắt đầu làm bài ngay
                 </Button>
               </Link>
-              <Link to="/courses">
-                <Button size="lg" variant="outline" className="border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 text-base px-8 h-12">
-                  Xem khóa học <ArrowRight className="ml-2 h-5 w-5" />
-                </Button>
-              </Link>
-            </motion.div>
-
-            <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={4}
-              className="mt-10 flex items-center gap-6 text-sm text-primary-foreground/60"
-            >
-              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-primary" /> Miễn phí</span>
-              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-primary" /> Không cài đặt</span>
-              <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-primary" /> AI hỗ trợ 24/7</span>
             </motion.div>
           </div>
         </div>
       </section>
 
-      {/* Features */}
+      {/* CÁC PHẦN FEATURES VÀ STEPS ĐƯỢC GIỮ NGUYÊN... */}
       <section id="features" className="py-24 bg-background">
         <div className="container mx-auto px-6">
           <div className="text-center mb-16">
@@ -151,7 +137,6 @@ const Index = () => {
         </div>
       </section>
 
-      {/* How it works */}
       <section className="py-24 bg-muted/50">
         <div className="container mx-auto px-6">
           <div className="text-center mb-16">
@@ -176,7 +161,6 @@ const Index = () => {
         </div>
       </section>
 
-      {/* CTA */}
       <section className="py-24 bg-background">
         <div className="container mx-auto px-6">
           <div className="rounded-2xl bg-gradient-hero p-12 md:p-16 text-center relative overflow-hidden">
@@ -190,9 +174,9 @@ const Index = () => {
               <p className="text-lg text-primary-foreground/70 mb-8 max-w-xl mx-auto">
                 Hàng trăm bài tập, AI hỗ trợ thông minh — bắt đầu hành trình ngay hôm nay.
               </p>
-              <Link to="/workspace">
+              <Link to="/student-dashboard">
                 <Button size="lg" className="bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-glow text-base px-10 h-12">
-                  Bắt đầu miễn phí <ArrowRight className="ml-2 h-5 w-5" />
+                  Bắt đầu làm bài ngay <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
             </div>
@@ -200,7 +184,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* Footer */}
+      {/* FOOTER ĐÃ ĐƯỢC ĐỔI TÊN THÀNH AI LEARNING HUB */}
       <footer className="border-t border-border py-12 bg-background">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -208,10 +192,10 @@ const Index = () => {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary">
                 <Code2 className="h-4 w-4 text-primary-foreground" />
               </div>
-              <span className="font-bold text-foreground">CodeAI</span>
+              <span className="font-bold text-foreground">AI Learning Hub</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              © 2026 CodeAI — Nền tảng học lập trình tích hợp AI
+              © 2026 AI Learning Hub — Nền tảng học lập trình tích hợp AI
             </p>
           </div>
         </div>
