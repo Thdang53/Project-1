@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Link, Navigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Button } from "../components/ui/button";
 import { Code2, Mail, Lock, User, ArrowRight, Loader2 } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../hooks/use-toast";
 
 const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
@@ -11,29 +11,43 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  
   const { user, signIn, signUp } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate(); // Khởi tạo công cụ chuyển trang
 
-  if (user) return <Navigate to="/workspace" replace />;
+  // 1. Tự động chuyển trang nếu phát hiện đã đăng nhập từ trước
+  if (user) return <Navigate to="/student-dashboard" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email || !password) return;
+    
     setSubmitting(true);
 
-    if (isRegister) {
-      const { error } = await signUp(email, password, displayName);
-      if (error) {
-        toast({ title: "Lỗi đăng ký", description: error.message, variant: "destructive" });
-      } else {
+    try {
+      if (isRegister) {
+        const { error } = await signUp(email, password, displayName);
+        if (error) throw error;
         toast({ title: "Đăng ký thành công!", description: "Vui lòng kiểm tra email để xác nhận tài khoản." });
+      } else {
+        const { error } = await signIn(email, password);
+        if (error) throw error;
+        
+        toast({ title: "Đăng nhập thành công!", description: "Đang vào không gian học tập..." });
+        
+        // 2. Chuyển hướng sang Student Dashboard ngay khi Đăng nhập thành công
+        navigate("/student-dashboard"); 
       }
-    } else {
-      const { error } = await signIn(email, password);
-      if (error) {
-        toast({ title: "Lỗi đăng nhập", description: error.message, variant: "destructive" });
-      }
+    } catch (err: any) {
+      toast({ 
+        title: isRegister ? "Lỗi đăng ký" : "Lỗi đăng nhập", 
+        description: err.message || "Xác thực thất bại, vui lòng thử lại.", 
+        variant: "destructive" 
+      });
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   };
 
   return (
@@ -116,7 +130,7 @@ const Login = () => {
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {isRegister ? "Đã có tài khoản?" : "Chưa có tài khoản?"}{" "}
-            <button onClick={() => setIsRegister(!isRegister)} className="font-medium text-primary hover:underline">
+            <button onClick={() => setIsRegister(!isRegister)} type="button" className="font-medium text-primary hover:underline">
               {isRegister ? "Đăng nhập" : "Đăng ký ngay"}
             </button>
           </p>

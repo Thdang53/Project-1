@@ -41,9 +41,15 @@ namespace backend.Controllers
                 return BadRequest(new { output = "Ngôn ngữ không được hỗ trợ." });
             }
 
+            // 1. Tạo file chứa Code
             string fileName = $"code_{Guid.NewGuid()}.{fileExtension}";
             string filePath = Path.Combine(_tempFolder, fileName);
             await System.IO.File.WriteAllTextAsync(filePath, request.Code);
+
+            // 2. Tạo file chứa Dữ liệu đầu vào (Input)
+            string inputFileName = $"input_{Guid.NewGuid()}.txt";
+            string inputFilePath = Path.Combine(_tempFolder, inputFileName);
+            await System.IO.File.WriteAllTextAsync(inputFilePath, request.Input ?? "");
 
             string dockerImage = request.Language switch
             {
@@ -54,12 +60,13 @@ namespace backend.Controllers
                 _ => ""
             };
 
+            // 3. Sử dụng điều hướng file (<) của Linux để nạp dữ liệu vào chương trình
             string command = request.Language switch
             {
-                "python" => $"python /app/{fileName}",
-                "cpp" => $"g++ /app/{fileName} -o /app/out && /app/out",
-                "java" => $"java /app/{fileName}",
-                "javascript" => $"node /app/{fileName}",
+                "python" => $"python /app/{fileName} < /app/{inputFileName}",
+                "cpp" => $"g++ /app/{fileName} -o /app/out && /app/out < /app/{inputFileName}",
+                "java" => $"java /app/{fileName} < /app/{inputFileName}",
+                "javascript" => $"node /app/{fileName} < /app/{inputFileName}",
                 _ => ""
             };
 
@@ -81,22 +88,21 @@ namespace backend.Controllers
                     return StatusCode(500, new { output = "Không thể khởi động Sandbox." });
                 }
 
-                if (!string.IsNullOrEmpty(request.Input))
-                {
-                    using (var streamWriter = process.StandardInput)
-                    {
-                        await streamWriter.WriteAsync(request.Input);
-                    }
-                }
-
-                if (!process.WaitForExit(5000))
+                // Tăng thời gian chờ lên 15 giây để tránh lỗi Timeout giả do Docker khởi động chậm
+                if (!process.WaitForExit(15000))
                 {
                     process.Kill();
-                    return Ok(new { output = "LỖI: Time Limit Exceeded (Chạy quá 5 giây)." });
+                    return Ok(new { output = "LỖI: Time Limit Exceeded (Chạy quá 15 giây).\nNguyên nhân có thể do:\n1. Server Docker đang khởi động chậm.\n2. Code của bạn bị vòng lặp vô hạn (Infinite Loop)." });
                 }
 
                 string output = await process.StandardOutput.ReadToEndAsync();
                 string error = await process.StandardError.ReadToEndAsync();
+
+                // Bắt lỗi khi người dùng quên nhập Custom Input cho hàm input()
+                if (error.Contains("EOFError: EOF when reading a line") || error.Contains("std::bad_alloc"))
+                {
+                     return Ok(new { output = "⚠️ LỖI CHỜ NHẬP LIỆU (EOFError):\n\nCode của bạn có chứa lệnh yêu cầu nhập dữ liệu (như input() trong Python). Vì đây là môi trường đám mây nên máy chủ không thể dừng lại giữa chừng để chờ bạn gõ phím được.\n\n👉 CÁCH GIẢI QUYẾT:\nHãy kéo xuống ô 'Dữ liệu đầu vào (Custom Input)' ở bên phải, gõ SẴN dữ liệu vào đó rồi bấm 'Chạy code' lại nhé!" });
+                }
 
                 if (!string.IsNullOrEmpty(error))
                 {
@@ -111,10 +117,9 @@ namespace backend.Controllers
             }
             finally
             {
-                if (System.IO.File.Exists(filePath))
-                {
-                    System.IO.File.Delete(filePath);
-                }
+                // Dọn dẹp cả file Code và file Input sau khi chạy xong
+                if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+                if (System.IO.File.Exists(inputFilePath)) System.IO.File.Delete(inputFilePath);
             }
         }
 
@@ -188,9 +193,15 @@ namespace backend.Controllers
                 _ => "txt"
             };
 
+            // 1. Tạo file Code
             string fileName = $"code_{Guid.NewGuid()}.{fileExtension}";
             string filePath = Path.Combine(_tempFolder, fileName);
             await System.IO.File.WriteAllTextAsync(filePath, code);
+
+            // 2. Tạo file Input cho Test Case hiện tại
+            string inputFileName = $"input_{Guid.NewGuid()}.txt";
+            string inputFilePath = Path.Combine(_tempFolder, inputFileName);
+            await System.IO.File.WriteAllTextAsync(inputFilePath, input ?? "");
 
             string dockerImage = language switch
             {
@@ -201,12 +212,13 @@ namespace backend.Controllers
                 _ => ""
             };
 
+            // 3. Đọc dữ liệu đầu vào từ file input
             string command = language switch
             {
-                "python" => $"python /app/{fileName}",
-                "cpp" => $"g++ /app/{fileName} -o /app/out && /app/out",
-                "java" => $"java /app/{fileName}",
-                "javascript" => $"node /app/{fileName}",
+                "python" => $"python /app/{fileName} < /app/{inputFileName}",
+                "cpp" => $"g++ /app/{fileName} -o /app/out && /app/out < /app/{inputFileName}",
+                "java" => $"java /app/{fileName} < /app/{inputFileName}",
+                "javascript" => $"node /app/{fileName} < /app/{inputFileName}",
                 _ => ""
             };
 
@@ -215,8 +227,7 @@ namespace backend.Controllers
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "docker",
-                    Arguments = $"run -i --rm -v \"{_tempFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
-                    RedirectStandardInput = true,
+                    Arguments = $"run --rm -v \"{_tempFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -229,15 +240,7 @@ namespace backend.Controllers
                     return ("", "Không thể khởi động Sandbox.", true);
                 }
 
-                if (!string.IsNullOrEmpty(input))
-                {
-                    using (var streamWriter = process.StandardInput)
-                    {
-                        await streamWriter.WriteAsync(input);
-                    }
-                }
-
-                if (!process.WaitForExit(5000))
+                if (!process.WaitForExit(15000))
                 {
                     process.Kill();
                     return ("", "Time Limit Exceeded", true);
@@ -259,10 +262,9 @@ namespace backend.Controllers
             }
             finally
             {
-                if (System.IO.File.Exists(filePath))
-                {
-                    System.IO.File.Delete(filePath);
-                }
+                // Dọn dẹp cả 2 file
+                if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+                if (System.IO.File.Exists(inputFilePath)) System.IO.File.Delete(inputFilePath);
             }
         }
     }

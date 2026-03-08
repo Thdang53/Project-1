@@ -1,18 +1,18 @@
 using Microsoft.EntityFrameworkCore;
 using backend.Models;
 
-namespace backend.Data;
-
-public class AppDbContext : DbContext
+namespace backend.Data
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+    public class AppDbContext : DbContext
     {
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+        public DbSet<User> Users { get; set; }
+        public DbSet<Course> Courses { get; set; }
+        public DbSet<Lesson> Lessons { get; set; }
+        public DbSet<Exercise> Exercises { get; set; }
+        
+        // THÊM DÒNG NÀY VÀO ĐỂ EF BIẾT TẠO BẢNG USERPROFILES
+        public DbSet<UserProfile> UserProfiles { get; set; }
     }
-
-    // Các DbSet này sẽ tương ứng với các bảng trong MySQL
-    public DbSet<User> Users { get; set; }
-    public DbSet<Course> Courses { get; set; }
-
-    public DbSet<Lesson> Lessons { get; set; }
-    public DbSet<Exercise> Exercises { get; set; }
 }
