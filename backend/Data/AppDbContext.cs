@@ -14,5 +14,8 @@ namespace backend.Data
         
         // THÊM DÒNG NÀY VÀO ĐỂ EF BIẾT TẠO BẢNG USERPROFILES
         public DbSet<UserProfile> UserProfiles { get; set; }
+
+        // BẢNG MỚI: LƯU TRỮ LỊCH SỬ NỘP BÀI CỦA SINH VIÊN
+        public DbSet<Submission> Submissions { get; set; }
     }
 }

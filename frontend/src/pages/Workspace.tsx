@@ -3,11 +3,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { 
   Code2, Send, Play, Upload, BrainCircuit, 
-  ChevronRight, MessageSquare, Terminal as TerminalIcon, 
+  MessageSquare, Terminal as TerminalIcon, 
   BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code
 } from "lucide-react";
-import Editor from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown"; 
+import Editor from "@monaco-editor/react"; // 1. KHÔI PHỤC LẠI EDITOR ĐỂ CÓ MÀU SẮC
+import { useAuth } from "../hooks/useAuth"; // 2. IMPORT HOOK AUTH CHUẨN ĐỂ LẤY EMAIL
 
 interface Exercise {
   id: number;
@@ -40,7 +41,6 @@ def solve():
   pass
 `;
 
-// LƯU Ý: THAY ĐỔI URL API NÀY NẾU CẦN THIẾT
 const API_BASE_URL = "http://localhost:5043";
 
 const Workspace = () => {
@@ -59,7 +59,6 @@ const Workspace = () => {
   const [output, setOutput] = useState(">>> Chờ chạy code...");
   const [isExecuting, setIsExecuting] = useState(false);
   
-  // STATE MỚI: Lưu dữ liệu đầu vào người dùng tự nhập để test
   const [customInput, setCustomInput] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -73,6 +72,10 @@ const Workspace = () => {
     { role: "assistant", content: "Xin chào! Mình là trợ giảng AI. Đọc kĩ đề bài và bắt đầu code nhé, nếu bí thì cứ hỏi mình!" },
   ]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+
+  // 3. LẤY EMAIL TRỰC TIẾP TỪ HOOK USEAUTH (KHÔNG DÙNG LOCALSTORAGE NỮA)
+  const { user } = useAuth();
+  const userEmail = user?.email || "";
 
   useEffect(() => {
     const fetchUrl = exerciseId 
@@ -100,7 +103,6 @@ const Workspace = () => {
       const response = await fetch(`${API_BASE_URL}/api/CodeExecution/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Gửi kèm customInput lên Server
         body: JSON.stringify({ language: language, code: code, input: customInput }),
       });
       const data = await response.json();
@@ -126,7 +128,8 @@ const Workspace = () => {
         body: JSON.stringify({ 
           language: language, 
           code: code, 
-          exerciseId: exercise.id 
+          exerciseId: exercise.id,
+          userEmail: userEmail // Đã lấy được chuẩn xác
         }),
       });
       
@@ -211,6 +214,9 @@ const Workspace = () => {
           <span className="text-sm font-medium text-editor-foreground">
             {exercise ? exercise.title : "Đang tải..."}
           </span>
+          <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded ml-2">
+            {userEmail || "Chưa đăng nhập"}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <select 
@@ -244,8 +250,9 @@ const Workspace = () => {
           
           <Button 
             onClick={handleSubmitCode}
-            disabled={isExecuting || isSubmitting}
-            size="sm" className="bg-gradient-primary text-primary-foreground hover:opacity-90 h-8"
+            disabled={isExecuting || isSubmitting || !userEmail}
+            title={!userEmail ? "Cần đăng nhập để nộp bài" : ""}
+            size="sm" className="bg-gradient-primary text-primary-foreground hover:opacity-90 h-8 disabled:opacity-50"
           >
             {isSubmitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
             Nộp bài
@@ -318,6 +325,7 @@ const Workspace = () => {
           )}
         </div>
 
+        {/* 4. KHÔI PHỤC MONACO EDITOR */}
         <div className="flex-1 flex flex-col">
           <Editor
             height="100%"
@@ -362,7 +370,6 @@ const Workspace = () => {
               <>
                 <pre className="font-mono text-sm text-editor-foreground/80 whitespace-pre-wrap flex-1">{output}</pre>
                 
-                {/* KHU VỰC NHẬP CUSTOM INPUT */}
                 <div className="mt-4 pt-4 border-t border-editor-line">
                   <label className="flex items-center gap-2 text-xs font-semibold text-editor-foreground/70 mb-2">
                     <Code className="h-3.5 w-3.5" /> Dữ liệu đầu vào (Custom Input)
