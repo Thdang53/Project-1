@@ -1,69 +1,151 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { useState, useEffect, createContext, useContext, ReactNode } from "react";
+import { jwtDecode } from "jwt-decode";
 
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  loading: boolean;
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error: Error | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signOut: () => Promise<void>;
+// Khuôn mẫu dữ liệu của một người dùng
+interface User {
+  email: string;
+  fullName: string;
+  role: string;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Khuôn mẫu của cái Thẻ JWT (những thông tin mình nhét vào nó bên C#)
+interface JwtPayload {
+  sub: string;
+  email: string;
+  FullName: string;
+  Role: string;
+  exp: number;
+}
+
+// Cung cấp các chức năng liên quan đến xác thực
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  signOut: () => void;
+}
+
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  token: null,
+  loading: true,
+  signIn: async () => ({ error: null }),
+  signUp: async () => ({ error: null }),
+  signOut: () => {},
+});
+
+const API_BASE_URL = "http://localhost:5043";
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    const savedToken = localStorage.getItem("jwt_token");
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    if (savedToken) {
+      try {
+        const decodedToken = jwtDecode<JwtPayload>(savedToken);
+        const currentTime = Date.now() / 1000;
 
-    return () => subscription.unsubscribe();
+        if (decodedToken.exp < currentTime) {
+          console.log("Token đã hết hạn.");
+          signOut();
+        } else {
+          setToken(savedToken);
+          setUser({
+            email: decodedToken.email,
+            fullName: decodedToken.FullName,
+            role: decodedToken.Role,
+          });
+        }
+      } catch (error) {
+        console.error("Token không hợp lệ:", error);
+        signOut();
+      }
+    }
+    
+    setLoading(false);
   }, []);
 
-  const signUp = async (email: string, password: string, displayName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: displayName },
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    return { error: error as Error | null };
-  };
-
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error as Error | null };
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/Auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      // BẢO VỆ: Nếu C# trả về lỗi HTML/Text thay vì JSON, chặn ngay lại
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await response.text();
+        console.error("Lỗi Server thô:", errorText);
+        throw new Error("Lỗi Backend: Vui lòng xem màn hình Terminal đang chạy C# để biết lý do.");
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Đăng nhập thất bại");
+      }
+
+      localStorage.setItem("jwt_token", data.token);
+      setToken(data.token);
+      setUser({
+          email: data.user.email,
+          fullName: data.user.fullName,
+          role: data.user.role
+      });
+
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
   };
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
+  const signUp = async (email: string, password: string, fullName: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/Auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, fullName }),
+      });
+
+      // BẢO VỆ: Nếu C# sập và trả về HTML/Text, lấy text báo lỗi
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await response.text();
+        console.error("Lỗi Server thô:", errorText);
+        throw new Error("Lỗi Backend: Vui lòng xem màn hình Terminal đang chạy C# để biết lý do.");
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Đăng ký thất bại");
+      }
+
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
+  };
+
+  const signOut = () => {
+    localStorage.removeItem("jwt_token");
+    setToken(null);
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
-      {children}
+    <AuthContext.Provider value={{ user, token, loading, signIn, signUp, signOut }}>
+      {!loading && children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within AuthProvider");
-  return context;
-};
+export const useAuth = () => useContext(AuthContext);

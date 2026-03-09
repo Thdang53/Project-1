@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using backend.Data;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +13,24 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // 2. Thêm Controllers
 builder.Services.AddControllers();
+// =====================================
+// KÍCH HOẠT HỆ THỐNG BẢO MẬT BẰNG JWT
+// =====================================
+var jwtKey = builder.Configuration["JwtSettings:SecretKey"];
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = false; // Tắt bắt buộc HTTPS khi đang chạy dev
+        options.SaveToken = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey!)),
+            ValidateIssuer = false,   // Không khắt khe nguồn phát lúc đang test
+            ValidateAudience = false  // Không khắt khe nguồn nhận lúc đang test
+        };
+    });
 
 // code editor này để Backend có thể đi gọi các API khác (Piston, Gemini...)
 builder.Services.AddHttpClient();
@@ -43,6 +64,7 @@ app.UseHttpsRedirection();
 
 // Kích hoạt CORS (Phải đặt trước UseAuthorization)
 app.UseCors("AllowReactApp");
+app.UseAuthentication(); //Kích hoạt hệ thống xác thực JWT
 
 app.UseAuthorization();
 app.MapControllers();

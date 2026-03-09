@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
-import { Button } from "../components/ui/button";
+import { Link, Navigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import { Code2, Mail, Lock, User, ArrowRight, Loader2 } from "lucide-react";
-import { useAuth } from "../hooks/useAuth";
-import { useToast } from "../hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
@@ -11,40 +11,38 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  
   const { user, signIn, signUp } = useAuth();
   const { toast } = useToast();
-  const navigate = useNavigate(); // Khởi tạo công cụ chuyển trang
 
-  // 1. Tự động chuyển trang nếu phát hiện đã đăng nhập từ trước
+  // Nếu đã đăng nhập thành công thì tự động chuyển hướng về trang Student Dashboard
   if (user) return <Navigate to="/student-dashboard" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
-    
     setSubmitting(true);
 
     try {
       if (isRegister) {
+        // GỌI HÀM ĐĂNG KÝ XUỐNG API C#
         const { error } = await signUp(email, password, displayName);
-        if (error) throw error;
-        toast({ title: "Đăng ký thành công!", description: "Vui lòng kiểm tra email để xác nhận tài khoản." });
+        if (error) {
+          toast({ title: "Lỗi đăng ký", description: error.message, variant: "destructive" });
+        } else {
+          toast({ title: "Đăng ký thành công!", description: "Đang tự động đăng nhập..." });
+          // Đăng ký xong tự động gọi hàm Đăng nhập
+          await signIn(email, password);
+        }
       } else {
+        // GỌI HÀM ĐĂNG NHẬP XUỐNG API C#
         const { error } = await signIn(email, password);
-        if (error) throw error;
-        
-        toast({ title: "Đăng nhập thành công!", description: "Đang vào không gian học tập..." });
-        
-        // 2. Chuyển hướng sang Student Dashboard ngay khi Đăng nhập thành công
-        navigate("/student-dashboard"); 
+        if (error) {
+          toast({ title: "Lỗi đăng nhập", description: error.message, variant: "destructive" });
+        } else {
+          toast({ title: "Đăng nhập thành công!", description: "Chào mừng trở lại." });
+        }
       }
     } catch (err: any) {
-      toast({ 
-        title: isRegister ? "Lỗi đăng ký" : "Lỗi đăng nhập", 
-        description: err.message || "Xác thực thất bại, vui lòng thử lại.", 
-        variant: "destructive" 
-      });
+      toast({ title: "Lỗi hệ thống", description: err.message || "Đã có lỗi xảy ra.", variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -59,7 +57,7 @@ const Login = () => {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary">
               <Code2 className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold text-foreground">AI Learning Hub</span>
+            <span className="text-xl font-bold text-foreground">CodeAI</span>
           </Link>
 
           <h1 className="text-3xl font-bold text-foreground">
@@ -130,7 +128,11 @@ const Login = () => {
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {isRegister ? "Đã có tài khoản?" : "Chưa có tài khoản?"}{" "}
-            <button onClick={() => setIsRegister(!isRegister)} type="button" className="font-medium text-primary hover:underline">
+            <button 
+              type="button"
+              onClick={() => setIsRegister(!isRegister)} 
+              className="font-medium text-primary hover:underline outline-none"
+            >
               {isRegister ? "Đăng nhập" : "Đăng ký ngay"}
             </button>
           </p>

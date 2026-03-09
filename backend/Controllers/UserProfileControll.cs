@@ -76,5 +76,40 @@ namespace backend.Controllers
                 return StatusCode(500, new { message = "Lỗi khi lưu dữ liệu vào SQL Server.", details = ex.Message });
             }
         }
+
+        // ==========================================
+        // 3. API MỚI: LẤY THỐNG KÊ TIẾN ĐỘ SINH VIÊN (DÀNH CHO ADMIN)
+        // ==========================================
+        [HttpGet("stats")]
+        public async Task<IActionResult> GetStudentStats()
+        {
+            // Lấy danh sách tất cả những người dùng có Role là "Student"
+            var users = await _context.Users.Where(u => u.Role == "Student").ToListAsync();
+            
+            // Lấy toàn bộ lịch sử nộp bài trong hệ thống
+            var submissions = await _context.Submissions.ToListAsync();
+
+            // Tính toán thống kê cho từng sinh viên
+            var stats = users.Select(u => {
+                var userSubs = submissions.Where(s => s.UserEmail == u.Email).ToList();
+                
+                // Đếm số bài tập "khác nhau" mà sinh viên đã giải đúng (Accepted)
+                var completedExercises = userSubs
+                    .Where(s => s.Status == "Accepted")
+                    .Select(s => s.ExerciseId)
+                    .Distinct()
+                    .Count();
+
+                return new {
+                    email = u.Email,
+                    fullName = u.FullName,
+                    totalSubmissions = userSubs.Count,
+                    completedExercises = completedExercises,
+                    lastActive = userSubs.OrderByDescending(s => s.SubmittedAt).FirstOrDefault()?.SubmittedAt
+                };
+            }).OrderByDescending(s => s.completedExercises).ToList(); // Xếp ai giải được nhiều bài lên đầu
+
+            return Ok(stats);
+        }
     }
 }

@@ -1,20 +1,24 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { ArrowLeft, Mail, MapPin, Github, Phone, Camera, Save, Loader2, User } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  User, Mail, MapPin, Github, Camera, Save, 
-  ArrowLeft, Upload, MessageSquare, Info
-} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
 
-// Cấu trúc dữ liệu khớp với SQL Server
+// 1. Cấu trúc dữ liệu khớp với Backend C#
 interface UserProfile {
   fullName: string;
   nickname: string;
   email: string;
-  avatarUrl: string; 
+  avatarUrl: string;
   location: string;
   githubUrl: string;
   bio: string;
@@ -25,11 +29,11 @@ const API_BASE_URL = "http://localhost:5043";
 
 const Profile = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
-  const [isSaving, setIsSaving] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [fetching, setFetching] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 2. State lưu trữ dữ liệu thật từ DB thay vì dữ liệu ảo
   const [profile, setProfile] = useState<UserProfile>({
     fullName: "",
     nickname: "",
@@ -41,7 +45,7 @@ const Profile = () => {
     contactInfo: "",
   });
 
-  // 1. Lấy dữ liệu hồ sơ từ SQL Server
+  // 3. Gọi API lấy dữ liệu khi vừa vào trang
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user?.email) return;
@@ -51,10 +55,11 @@ const Profile = () => {
           const data = await response.json();
           setProfile(data);
         } else {
+          // Nếu chưa có profile trong DB, dùng tạm email và tên từ Token
           setProfile(prev => ({
             ...prev,
             email: user.email || "",
-            fullName: user.email?.split("@")[0] || "Học viên",
+            fullName: user.fullName || user.email?.split("@")[0] || "Học viên",
           }));
         }
       } catch (err) {
@@ -66,30 +71,28 @@ const Profile = () => {
     fetchProfile();
   }, [user]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setProfile((prev) => ({ ...prev, [name]: value }));
-  };
+  // Hàm cập nhật các field văn bản
+  const update = (key: keyof UserProfile, value: string) =>
+    setProfile((prev) => ({ ...prev, [key]: value }));
 
-  // 2. Xử lý khi chọn ảnh từ máy tính
+  // 4. Hàm xử lý upload ảnh (Chuyển sang Base64)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
         toast({ 
-          title: "Lỗi tệp tin", 
-          description: "Vui lòng chọn một file hình ảnh (jpg, png).", 
+          title: "Lỗi định dạng", 
+          description: "Vui lòng chọn file hình ảnh (JPG, PNG).", 
           variant: "destructive" 
         });
         return;
       }
       
-      // Đọc file thành chuỗi Base64 để hiển thị và lưu vào DB
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfile(prev => ({ ...prev, avatarUrl: reader.result as string }));
         toast({
-          title: "Đã chọn ảnh",
+          title: "Đã tải ảnh lên",
           description: "Bản xem trước đã được cập nhật.",
         });
       };
@@ -97,41 +100,45 @@ const Profile = () => {
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 5. Hàm lưu dữ liệu xuống SQL Server
+  const handleSave = async () => {
     if (!user) return;
-    setIsSaving(true);
+    setSaving(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/UserProfile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(profile),
       });
-      if (!response.ok) throw new Error("Máy chủ phản hồi lỗi");
-      toast({ title: "Thành công!", description: "Hồ sơ đã được lưu vào SQL Server." });
+      if (!response.ok) throw new Error("Máy chủ C# phản hồi lỗi");
+      
+      toast({ title: "Đã lưu thành công!", description: "Thông tin cá nhân đã được cập nhật vào cơ sở dữ liệu." });
     } catch (err: any) {
-      toast({ title: "Lỗi", description: err.message, variant: "destructive" });
+      toast({ title: "Lỗi lưu dữ liệu", description: err.message, variant: "destructive" });
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
-  const getInitials = () => {
-    return profile.fullName ? profile.fullName.substring(0, 2).toUpperCase() : "SV";
-  };
+  const initials = profile.fullName
+    ? profile.fullName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+    : "SV";
 
-  if (fetching) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-slate-50">
-      <div className="animate-spin h-10 w-10 border-4 border-primary border-t-transparent rounded-full mb-4"></div>
-      <p className="text-slate-500">Đang tải hồ sơ từ SQL Server...</p>
-    </div>
-  );
+  // Màn hình chờ khi đang load dữ liệu
+  if (fetching) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
+        <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Đang tải dữ liệu hồ sơ...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
-      
-      {/* Input file ẩn */}
+
+      {/* Input ẩn dùng để chọn file ảnh */}
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -140,118 +147,247 @@ const Profile = () => {
         className="hidden" 
       />
 
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-8 pt-24">
-        <Link to="/student-dashboard" className="inline-flex items-center text-sm text-slate-500 hover:text-primary mb-6 transition-colors">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Quay lại Dashboard
-        </Link>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Cột trái: Thẻ hồ sơ */}
-          <div className="lg:col-span-4">
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden sticky top-24 pb-8">
-              <div className="h-24 bg-gradient-to-r from-indigo-500 to-violet-600" />
-              <div className="relative -mt-12 flex justify-center mb-4">
-                <div className="h-24 w-24 rounded-full border-4 border-white bg-slate-100 shadow-md overflow-hidden flex items-center justify-center">
-                  {profile.avatarUrl ? (
-                    <img src={profile.avatarUrl} className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="text-2xl font-bold text-slate-300">{getInitials()}</span>
-                  )}
-                </div>
-              </div>
-              <div className="text-center px-6">
-                <h2 className="text-xl font-bold text-slate-900 truncate">{profile.fullName}</h2>
-                {profile.nickname && <p className="text-primary text-sm font-medium">@{profile.nickname}</p>}
-                
-                <div className="mt-6 space-y-3 text-left border-t pt-4">
-                  <div className="flex items-center gap-3 text-sm text-slate-600">
-                    <Mail className="h-4 w-4" /> {profile.email}
+      <div className="flex-1 pt-6">
+        <div className="container mx-auto px-4 sm:px-6 mb-4">
+          <Link to="/student-dashboard">
+            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="h-4 w-4" />
+              Quay lại Dashboard
+            </Button>
+          </Link>
+        </div>
+
+        <div className="container mx-auto px-4 sm:px-6 pb-16">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="grid grid-cols-1 lg:grid-cols-5 gap-8 max-w-6xl mx-auto"
+          >
+            {/* ─── Left Column: Identity Card ─── */}
+            <div className="lg:col-span-2">
+              <Card className="overflow-hidden rounded-2xl border-border shadow-card hover:shadow-elevated transition-shadow duration-300 sticky top-24">
+                {/* Banner */}
+                <div className="relative h-36 bg-gradient-primary">
+                  <div className="absolute inset-0 opacity-20">
+                    <div className="absolute top-4 right-6 h-24 w-24 rounded-full bg-primary-foreground/10 blur-2xl" />
+                    <div className="absolute bottom-2 left-8 h-16 w-16 rounded-full bg-primary-foreground/10 blur-xl" />
                   </div>
-                  {profile.location && (
-                    <div className="flex items-center gap-3 text-sm text-slate-600">
-                      <MapPin className="h-4 w-4" /> {profile.location}
-                    </div>
-                  )}
-                  {profile.githubUrl && (
-                    <div className="flex items-center gap-3 text-sm text-slate-600">
-                      <Github className="h-4 w-4" /> 
-                      <span className="truncate">{profile.githubUrl.replace(/https?:\/\/github\.com\//, '')}</span>
-                    </div>
-                  )}
                 </div>
-              </div>
-            </div>
-          </div>
 
-          {/* Cột phải: Form chỉnh sửa */}
-          <div className="lg:col-span-8">
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 md:p-10">
-              <h3 className="text-xl font-bold text-slate-900 mb-8 flex items-center gap-2">
-                <User className="text-primary" /> Thiết lập hồ sơ sinh viên
-              </h3>
+                {/* Avatar overlapping banner */}
+                <div className="relative px-6">
+                  <div className="-mt-14 mb-4">
+                    <Avatar className="h-28 w-28 ring-4 ring-card shadow-elevated bg-card">
+                      <AvatarImage src={profile.avatarUrl} alt={profile.fullName} className="object-cover" />
+                      <AvatarFallback className="bg-gradient-primary text-primary-foreground text-3xl font-bold">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                  </div>
 
-              <form onSubmit={handleSave} className="space-y-6">
-                <div className="flex flex-col md:flex-row items-center gap-6 p-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                  <div className="h-20 w-20 rounded-2xl bg-white border flex items-center justify-center overflow-hidden shadow-sm shrink-0">
-                    {profile.avatarUrl ? (
-                      <img src={profile.avatarUrl} className="h-full w-full object-cover" />
-                    ) : (
-                      <User className="h-8 w-8 text-slate-200" />
+                  <div className="pb-6">
+                    <h2 className="text-2xl font-bold text-foreground line-clamp-1" title={profile.fullName}>{profile.fullName}</h2>
+                    <p className="text-muted-foreground text-sm font-mono">@{profile.nickname || "chuacobietdanh"}</p>
+
+                    <Separator className="my-5" />
+
+                    <div className="space-y-3.5">
+                      <InfoRow icon={<Mail className="h-4 w-4" />} text={profile.email} />
+                      <InfoRow icon={<MapPin className="h-4 w-4" />} text={profile.location || "Chưa cập nhật vị trí"} />
+                      <InfoRow
+                        icon={<Github className="h-4 w-4" />}
+                        text={profile.githubUrl ? profile.githubUrl.replace(/https?:\/\/github\.com\//, '') : "Chưa liên kết Github"}
+                        href={profile.githubUrl}
+                      />
+                      <InfoRow icon={<Phone className="h-4 w-4" />} text={profile.contactInfo || "Chưa cập nhật SĐT"} />
+                    </div>
+
+                    {profile.bio && (
+                      <>
+                        <Separator className="my-5" />
+                        <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{profile.bio}</p>
+                      </>
                     )}
                   </div>
-                  <div className="flex-1 text-center md:text-left">
-                    <h4 className="font-bold text-slate-800 text-sm mb-1">Ảnh đại diện</h4>
-                    <p className="text-xs text-slate-400 mb-4">Hỗ trợ JPG, PNG. Tối đa 2MB.</p>
-                    <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="rounded-xl bg-white">
-                      <Upload className="h-4 w-4 mr-2" /> Chọn ảnh từ máy tính
+                </div>
+              </Card>
+            </div>
+
+            {/* ─── Right Column: Edit Form ─── */}
+            <div className="lg:col-span-3">
+              <Card className="rounded-2xl border-border shadow-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
+                    <User className="h-5 w-5 text-primary" />
+                    Cài đặt hồ sơ
+                  </CardTitle>
+                </CardHeader>
+
+                <CardContent className="pt-4 space-y-6">
+                  {/* Avatar Upload */}
+                  <div className="flex items-center gap-5 p-4 rounded-xl bg-muted/50 border border-border">
+                    <Avatar className="h-16 w-16 shrink-0 bg-card">
+                      <AvatarImage src={profile.avatarUrl} alt={profile.fullName} className="object-cover" />
+                      <AvatarFallback className="bg-gradient-primary text-primary-foreground text-lg font-bold">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">Ảnh đại diện</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Hỗ trợ định dạng JPG, PNG. Tối đa 2MB.</p>
+                    </div>
+                    {/* Bấm nút này sẽ kích hoạt cái <input type="file"> đang ẩn */}
+                    <Button variant="outline" size="sm" className="gap-1.5 shrink-0 bg-background" onClick={() => fileInputRef.current?.click()}>
+                      <Camera className="h-3.5 w-3.5" />
+                      Đổi ảnh
                     </Button>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">Họ và tên *</label>
-                    <input name="fullName" value={profile.fullName} onChange={handleChange} required className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all" />
+                  {/* Form Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <FormField
+                      label="Họ và tên"
+                      required
+                      value={profile.fullName}
+                      onChange={(v) => update("fullName", v)}
+                      placeholder="Nhập họ và tên"
+                    />
+                    <FormField
+                      label="Nickname"
+                      value={profile.nickname}
+                      onChange={(v) => update("nickname", v)}
+                      placeholder="username"
+                      prefix="@"
+                    />
+                    <FormField
+                      label="Email"
+                      value={profile.email}
+                      onChange={() => {}}
+                      disabled
+                      placeholder="email@example.com"
+                    />
+                    <FormField
+                      label="Vị trí"
+                      value={profile.location}
+                      onChange={(v) => update("location", v)}
+                      placeholder="Thành phố, Quốc gia"
+                    />
+                    <FormField
+                      label="GitHub URL"
+                      value={profile.githubUrl}
+                      onChange={(v) => update("githubUrl", v)}
+                      placeholder="https://github.com/username"
+                    />
+                    <FormField
+                      label="Số điện thoại"
+                      value={profile.contactInfo}
+                      onChange={(v) => update("contactInfo", v)}
+                      placeholder="+84 xxx xxx xxx"
+                    />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">Biệt danh</label>
-                    <input name="nickname" value={profile.nickname} onChange={handleChange} className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">Địa chỉ Email</label>
-                    <input value={profile.email} readOnly className="w-full h-12 px-4 rounded-xl border border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">Địa điểm</label>
-                    <input name="location" value={profile.location} onChange={handleChange} className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">GitHub URL</label>
-                    <input name="githubUrl" value={profile.githubUrl} onChange={handleChange} placeholder="https://github.com/..." className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">Liên hệ (SĐT/Zalo)</label>
-                    <input name="contactInfo" value={profile.contactInfo} onChange={handleChange} className="w-full h-12 px-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all" />
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">Giới thiệu bản thân</label>
-                  <textarea name="bio" value={profile.bio} onChange={handleChange} rows={4} className="w-full p-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-primary/20 outline-none transition-all resize-none" />
-                </div>
+                  {/* Bio */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-foreground">Giới thiệu bản thân</Label>
+                    <Textarea
+                      value={profile.bio}
+                      onChange={(e) => update("bio", e.target.value)}
+                      placeholder="Viết vài dòng về bản thân, kinh nghiệm lập trình hoặc mục tiêu của bạn..."
+                      className="min-h-[120px] resize-none bg-background focus:ring-primary"
+                    />
+                    <p className="text-xs text-muted-foreground text-right">{profile.bio.length}/500</p>
+                  </div>
 
-                <div className="flex justify-end pt-4">
-                  <Button type="submit" disabled={isSaving} className="h-12 px-10 rounded-2xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-all">
-                    {isSaving ? "Đang lưu..." : "Lưu vào hệ thống"} <Save className="ml-2 h-5 w-5" />
-                  </Button>
-                </div>
-              </form>
+                  <Separator />
+
+                  {/* Save */}
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="bg-gradient-primary text-primary-foreground hover:opacity-90 gap-2 px-8 h-11"
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Đang lưu vào hệ thống...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4" />
+                          Lưu thay đổi
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </div>
+          </motion.div>
         </div>
-      </main>
+      </div>
     </div>
   );
 };
+
+/* ─── Sub-components ─── */
+
+const InfoRow = ({ icon, text, href }: { icon: React.ReactNode; text: string; href?: string }) => (
+  <div className="flex items-center gap-3 text-sm">
+    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
+      {icon}
+    </div>
+    {href ? (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-foreground hover:text-primary truncate transition-colors font-medium"
+      >
+        {text}
+      </a>
+    ) : (
+      <span className="text-foreground truncate">{text}</span>
+    )}
+  </div>
+);
+
+const FormField = ({
+  label,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  required,
+  prefix,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  required?: boolean;
+  prefix?: string;
+}) => (
+  <div className="space-y-2">
+    <Label className="text-sm font-medium text-foreground">
+      {label}
+      {required && <span className="text-destructive ml-0.5">*</span>}
+    </Label>
+    <div className="relative">
+      {prefix && (
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">{prefix}</span>
+      )}
+      <Input
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`bg-background focus-visible:ring-primary ${disabled ? "opacity-60 cursor-not-allowed bg-muted/50" : ""} ${prefix ? "pl-8" : ""}`}
+      />
+    </div>
+  </div>
+);
 
 export default Profile;

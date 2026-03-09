@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { 
   Code2, Send, Play, Upload, BrainCircuit, 
@@ -7,8 +7,8 @@ import {
   BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code
 } from "lucide-react";
 import ReactMarkdown from "react-markdown"; 
-import Editor from "@monaco-editor/react"; // 1. KHÔI PHỤC LẠI EDITOR ĐỂ CÓ MÀU SẮC
-import { useAuth } from "../hooks/useAuth"; // 2. IMPORT HOOK AUTH CHUẨN ĐỂ LẤY EMAIL
+import Editor from "@monaco-editor/react";
+import { useAuth } from "../hooks/useAuth";
 
 interface Exercise {
   id: number;
@@ -45,10 +45,16 @@ const API_BASE_URL = "http://localhost:5043";
 
 const Workspace = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation(); // LẤY DỮ LIỆU ĐƯỢC TRUYỀN SANG TỪ DASHBOARD
   const exerciseId = searchParams.get("id");
 
-  const [language, setLanguage] = useState("python");
-  const [code, setCode] = useState(defaultCode);
+  // Kiểm tra xem có code cũ gửi sang không
+  const pastCode = location.state?.pastCode;
+  const pastLanguage = location.state?.pastLanguage;
+
+  // Nếu có pastCode thì hiển thị code cũ, không thì hiển thị mặc định
+  const [language, setLanguage] = useState(pastLanguage || "python");
+  const [code, setCode] = useState(pastCode || defaultCode);
   
   const [activeTab, setActiveTab] = useState<"output" | "ai" | "grading">("output");
   const [showChat, setShowChat] = useState(true);
@@ -73,7 +79,6 @@ const Workspace = () => {
   ]);
   const [isChatLoading, setIsChatLoading] = useState(false);
 
-  // 3. LẤY EMAIL TRỰC TIẾP TỪ HOOK USEAUTH (KHÔNG DÙNG LOCALSTORAGE NỮA)
   const { user } = useAuth();
   const userEmail = user?.email || "";
 
@@ -129,7 +134,7 @@ const Workspace = () => {
           language: language, 
           code: code, 
           exerciseId: exercise.id,
-          userEmail: userEmail // Đã lấy được chuẩn xác
+          userEmail: userEmail 
         }),
       });
       
@@ -217,6 +222,13 @@ const Workspace = () => {
           <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded ml-2">
             {userEmail || "Chưa đăng nhập"}
           </span>
+          
+          {/* Thông báo nhỏ nếu đang xem code cũ */}
+          {pastCode && (
+            <span className="text-xs text-warning bg-warning/10 px-2 py-1 rounded ml-2 font-medium">
+              Đang xem bản lưu cũ
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <select 
@@ -325,14 +337,13 @@ const Workspace = () => {
           )}
         </div>
 
-        {/* 4. KHÔI PHỤC MONACO EDITOR */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col bg-[#1e1e1e]">
           <Editor
             height="100%"
             language={language === "cpp" ? "cpp" : language}
             theme="vs-dark"
             value={code}
-            onChange={(v) => setCode(v || "")}
+            onChange={(v: string | undefined) => setCode(v || "")}
             options={{ fontSize: 14, minimap: { enabled: false } }}
           />
         </div>

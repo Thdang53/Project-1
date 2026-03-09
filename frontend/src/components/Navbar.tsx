@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Code2, LogIn, LogOut, User } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "../hooks/useAuth"; // Sửa đường dẫn import sang dạng tương đối để tránh lỗi biên dịch
 
 interface NavbarProps {
   variant?: "transparent" | "default";
@@ -48,9 +48,13 @@ const Navbar = ({ variant = "default" }: NavbarProps) => {
           <Link to="/student-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
             Không gian học tập
           </Link>
-          <Link to="/dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-            Quản lý (Admin)
-          </Link>
+          
+          {/* CHỈ HIỂN THỊ NÚT ADMIN NẾU TÀI KHOẢN LÀ ADMIN */}
+          {user?.role === "Admin" && (
+            <Link to="/dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+              Quản lý (Admin)
+            </Link>
+          )}
         </div>
 
         {/* Khu vực Nút Đăng nhập hoặc Avatar Profile */}
