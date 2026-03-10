@@ -4,13 +4,16 @@ import {
   Code2, BookOpen, Clock, Trophy, 
   LogOut, User, ChevronDown, CheckCircle2, History, Terminal
 } from "lucide-react";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 
-// Import các UI Component
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
-import { Badge } from "../components/ui/badge";
-import { Card, CardContent } from "../components/ui/card";
+// Import các UI Component (Sửa lại đường dẫn import)
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+
+// Mock dữ liệu biến môi trường cho Preview
+const MOCK_API_URL = "http://localhost:5043";
 
 interface Exercise {
   id: number;
@@ -20,12 +23,11 @@ interface Exercise {
   difficulty: string;
 }
 
-// Thêm khuôn mẫu cho Lịch sử nộp bài (Bổ sung trường code)
 interface Submission {
   id: number;
   exerciseId: number;
   language: string;
-  code: string; // Thêm trường lưu trữ mã code cũ
+  code: string; 
   status: string;
   passedTests: number;
   totalTests: number;
@@ -42,10 +44,23 @@ const StudentDashboard = () => {
   
   const navigate = useNavigate();
   const { user, signOut } = useAuth(); 
+  
+  // Xử lý biến môi trường an toàn hơn
+  const getApiUrl = () => {
+    try {
+      // Trong môi trường Vite thực tế
+      return import.meta.env.VITE_API_BASE_URL || MOCK_API_URL;
+    } catch (e) {
+      // Fallback cho môi trường xem trước (Preview)
+      return MOCK_API_URL;
+    }
+  };
+  
+  const API_BASE_URL = getApiUrl();
 
   // Lấy danh sách bài tập
   useEffect(() => {
-    fetch("http://localhost:5043/api/Exercises")
+    fetch(`${API_BASE_URL}/api/Exercises`)
       .then((res) => res.json())
       .then((data) => {
         setExercises(data);
@@ -60,13 +75,12 @@ const StudentDashboard = () => {
   // Lấy lịch sử nộp bài
   useEffect(() => {
     if (user?.email) {
-      fetch(`http://localhost:5043/api/CodeExecution/submissions/${user.email}`)
+      fetch(`${API_BASE_URL}/api/CodeExecution/submissions/${user.email}`)
         .then((res) => res.json())
         .then((data) => {
           if (Array.isArray(data)) {
-            setSubmissions(data); // Lưu toàn bộ lịch sử để hiển thị lên bảng
+            setSubmissions(data);
             
-            // Lọc ra các bài đã Accepted để đánh dấu xanh
             const completedIds = data
               .filter((sub: any) => sub.status === "Accepted")
               .map((sub: any) => sub.exerciseId);
@@ -94,7 +108,6 @@ const StudentDashboard = () => {
     return <Badge variant="outline">{status}</Badge>;
   };
 
-  // Hàm lấy tên bài tập từ ID
   const getExerciseTitle = (id: number) => {
     const ex = exercises.find(e => e.id === id);
     return ex ? ex.title : `Bài tập #${id}`;
@@ -114,7 +127,6 @@ const StudentDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans">
-      {/* Header */}
       <header className="bg-card/80 backdrop-blur-md border-b border-border px-6 h-16 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
           <Link to="/" className="flex items-center gap-2 group">
@@ -190,7 +202,6 @@ const StudentDashboard = () => {
           </p>
         </div>
 
-        {/* Thêm hệ thống Tabs */}
         <Tabs defaultValue="exercises" className="space-y-8">
           <TabsList className="bg-card border border-border">
             <TabsTrigger value="exercises" className="gap-2">
@@ -201,7 +212,6 @@ const StudentDashboard = () => {
             </TabsTrigger>
           </TabsList>
 
-          {/* TAB 1: DANH SÁCH BÀI TẬP */}
           <TabsContent value="exercises" className="focus:outline-none">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {isLoading ? (
@@ -270,7 +280,6 @@ const StudentDashboard = () => {
             </div>
           </TabsContent>
 
-          {/* TAB 2: LỊCH SỬ NỘP BÀI */}
           <TabsContent value="history" className="focus:outline-none">
             <Card className="border-border shadow-card">
               <CardContent className="p-0">
@@ -297,7 +306,6 @@ const StudentDashboard = () => {
                       <TableRow 
                         key={sub.id} 
                         className="hover:bg-muted/30 cursor-pointer" 
-                        // Truyền state code và language sang trang workspace tại đây
                         onClick={() => navigate(`/workspace?id=${sub.exerciseId}`, {
                           state: { pastCode: sub.code, pastLanguage: sub.language }
                         })}
@@ -330,7 +338,6 @@ const StudentDashboard = () => {
               </CardContent>
             </Card>
           </TabsContent>
-
         </Tabs>
       </main>
 

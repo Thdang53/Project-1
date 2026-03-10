@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Code2, Mail, Lock, User, ArrowRight, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -11,38 +11,69 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user, signIn, signUp } = useAuth();
   const { toast } = useToast();
 
-  // Nếu đã đăng nhập thành công thì tự động chuyển hướng về trang Student Dashboard
-  if (user) return <Navigate to="/student-dashboard" replace />;
+  // Tự động chuyển hướng nếu đã đăng nhập thành công
+  useEffect(() => {
+    if (user) {
+      // Ưu tiên chuyển về trang trước đó, nếu không thì phân quyền Admin/Student
+      const from = (location.state as any)?.from?.pathname || (user.role === "Admin" ? "/dashboard" : "/student-dashboard");
+      navigate(from, { replace: true });
+    }
+  }, [user, navigate, location]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Kiểm tra dữ liệu đầu vào cơ bản
+    if (!email || !password || (isRegister && !displayName)) {
+      toast({ title: "Lỗi", description: "Vui lòng nhập đầy đủ thông tin.", variant: "destructive" });
+      return;
+    }
+
+    if (password.length < 6) {
+      toast({ title: "Lỗi", description: "Mật khẩu phải có ít nhất 6 ký tự.", variant: "destructive" });
+      return;
+    }
+
     setSubmitting(true);
 
     try {
       if (isRegister) {
-        // GỌI HÀM ĐĂNG KÝ XUỐNG API C#
+        // GỌI HÀM ĐĂNG KÝ CỦA C# (Truyền displayName vào trường fullName của hook)
         const { error } = await signUp(email, password, displayName);
+        
         if (error) {
-          toast({ title: "Lỗi đăng ký", description: error.message, variant: "destructive" });
-        } else {
-          toast({ title: "Đăng ký thành công!", description: "Đang tự động đăng nhập..." });
-          // Đăng ký xong tự động gọi hàm Đăng nhập
-          await signIn(email, password);
-        }
+          throw new Error(error.message || "Đăng ký thất bại");
+        } 
+        
+        toast({ title: "Đăng ký thành công!", description: "Tài khoản của bạn đã được tạo. Vui lòng đăng nhập." });
+        // Chuyển về màn hình đăng nhập và xóa mật khẩu
+        setIsRegister(false);
+        setPassword("");
+        
       } else {
-        // GỌI HÀM ĐĂNG NHẬP XUỐNG API C#
-        const { error } = await signIn(email, password);
+        // GỌI HÀM ĐĂNG NHẬP CỦA C#
+        const { error, user: loggedInUser } = await signIn(email, password);
+        
         if (error) {
-          toast({ title: "Lỗi đăng nhập", description: error.message, variant: "destructive" });
-        } else {
-          toast({ title: "Đăng nhập thành công!", description: "Chào mừng trở lại." });
+          throw new Error(error.message || "Đăng nhập thất bại");
         }
+        
+        toast({ title: "Đăng nhập thành công!", description: "Chào mừng bạn quay trở lại." });
+        
+        // Điều hướng sẽ được xử lý tự động ở useEffect bên trên dựa vào biến user
       }
-    } catch (err: any) {
-      toast({ title: "Lỗi hệ thống", description: err.message || "Đã có lỗi xảy ra.", variant: "destructive" });
+    } catch (error: any) {
+      toast({ 
+        title: isRegister ? "Lỗi đăng ký" : "Lỗi đăng nhập", 
+        description: error.message, 
+        variant: "destructive" 
+      });
     } finally {
       setSubmitting(false);
     }
@@ -78,7 +109,7 @@ const Login = () => {
                     onChange={(e) => setDisplayName(e.target.value)}
                     className="w-full rounded-lg border border-input bg-background pl-10 pr-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                     placeholder="Nguyễn Văn A"
-                    required
+                    disabled={submitting}
                   />
                 </div>
               </div>
@@ -93,7 +124,7 @@ const Login = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full rounded-lg border border-input bg-background pl-10 pr-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                   placeholder="email@example.com"
-                  required
+                  disabled={submitting}
                 />
               </div>
             </div>
@@ -107,8 +138,7 @@ const Login = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full rounded-lg border border-input bg-background pl-10 pr-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                   placeholder="••••••••"
-                  required
-                  minLength={6}
+                  disabled={submitting}
                 />
               </div>
             </div>
@@ -130,8 +160,12 @@ const Login = () => {
             {isRegister ? "Đã có tài khoản?" : "Chưa có tài khoản?"}{" "}
             <button 
               type="button"
-              onClick={() => setIsRegister(!isRegister)} 
-              className="font-medium text-primary hover:underline outline-none"
+              onClick={() => {
+                setIsRegister(!isRegister);
+                setDisplayName("");
+                setPassword("");
+              }} 
+              className="font-medium text-primary hover:underline"
             >
               {isRegister ? "Đăng nhập" : "Đăng ký ngay"}
             </button>

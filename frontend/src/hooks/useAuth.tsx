@@ -22,7 +22,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: any, user?: User }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
   signOut: () => void;
 }
@@ -36,7 +36,8 @@ const AuthContext = createContext<AuthContextType>({
   signOut: () => {},
 });
 
-const API_BASE_URL = "http://localhost:5043";
+// Dùng biến môi trường an toàn
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:5043";
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -95,13 +96,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       localStorage.setItem("jwt_token", data.token);
       setToken(data.token);
-      setUser({
-          email: data.user.email,
-          fullName: data.user.fullName,
-          role: data.user.role
-      });
+      
+      const userData = {
+        email: data.user.email,
+        fullName: data.user.fullName,
+        role: data.user.role
+      };
+      
+      setUser(userData);
 
-      return { error: null };
+      // Trả về userData để màn hình Login biết phân quyền và chuyển hướng
+      return { error: null, user: userData };
     } catch (error: any) {
       return { error };
     }

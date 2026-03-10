@@ -15,7 +15,7 @@ import { useToast } from "../hooks/use-toast";
 import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit } from "lucide-react";
 import { motion } from "framer-motion";
 
-const API_BASE_URL = "http://localhost:5043";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 interface Exercise {
   id: number;
