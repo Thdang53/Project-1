@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization; // THÊM THƯ VIỆN BẢO MẬT NÀY
+using Microsoft.AspNetCore.Authorization; 
 using backend.Data;
 using backend.Models;
 
@@ -70,8 +70,18 @@ namespace backend.Controllers
                 return Problem("Entity set 'AppDbContext.Exercises' is null.");
             }
 
-            // Gán LessonId mặc định bằng 1 nếu chưa có hệ thống bài giảng
-            if (exercise.LessonId <= 0) exercise.LessonId = 1;
+            // 💡 CẬP NHẬT MỚI: Ràng buộc tính hợp lệ của Bài học (LessonId)
+            if (exercise.LessonId <= 0)
+            {
+                return BadRequest(new { message = "Vui lòng chọn một Bài học (Lesson) hợp lệ." });
+            }
+
+            // Kiểm tra xem LessonId được gửi lên có thực sự tồn tại trong bảng Lessons không
+            var lessonExists = await _context.Lessons.AnyAsync(l => l.Id == exercise.LessonId);
+            if (!lessonExists)
+            {
+                return BadRequest(new { message = "Bài học này không tồn tại trong hệ thống. Vui lòng kiểm tra lại." });
+            }
 
             _context.Exercises.Add(exercise);
             await _context.SaveChangesAsync();
@@ -120,6 +130,17 @@ namespace backend.Controllers
             if (id != exercise.Id)
             {
                 return BadRequest(new { message = "ID bài tập không khớp." });
+            }
+
+            // 💡 CẬP NHẬT MỚI: Nếu Admin sửa bài tập và đổi sang Bài học khác, cũng cần kiểm tra Bài học đó có tồn tại không
+            if (exercise.LessonId <= 0)
+            {
+                return BadRequest(new { message = "Vui lòng chọn một Bài học (Lesson) hợp lệ." });
+            }
+            var lessonExists = await _context.Lessons.AnyAsync(l => l.Id == exercise.LessonId);
+            if (!lessonExists)
+            {
+                return BadRequest(new { message = "Bài học này không tồn tại trong hệ thống." });
             }
 
             // Đánh dấu Object này là "Đã bị thay đổi" để Entity Framework lưu đè

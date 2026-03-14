@@ -10,13 +10,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { useToast } from "../hooks/use-toast";
-// 💡 CẬP NHẬT TÌM KIẾM 1: Import thêm icon Search
-import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit, Search } from "lucide-react";
+import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit, Search, Layers, FileText } from "lucide-react";
 import { motion } from "framer-motion";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+interface Course {
+  id: number;
+  title: string;
+}
+
+interface Lesson {
+  id: number;
+  courseId: number;
+  title: string;
+  orderNum: number;
+  content: string;
+}
 
 interface Exercise {
   id: number;
@@ -24,6 +36,7 @@ interface Exercise {
   difficulty: string;
   description: string;
   testCases: string;
+  lessonId: number;
 }
 
 interface TestCase {
@@ -32,65 +45,62 @@ interface TestCase {
 }
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  const [isAdmin, setIsAdmin] = useState(true); // Tạm thời set true cho Admin
   const [loading, setLoading] = useState(true);
   
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [studentStats, setStudentStats] = useState<any[]>([]);
-
-  // 💡 CẬP NHẬT TÌM KIẾM 2: Tạo biến lưu trữ từ khóa tìm kiếm
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // Form Thêm/Sửa bài tập
-  const [showAddCourse, setShowAddCourse] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-
-  const [newExercise, setNewExercise] = useState({ title: "", description: "", difficulty: "Easy" });
   
-  // Danh sách Test Case động
-  const [testCases, setTestCases] = useState<TestCase[]>([
-    { input: "", expectedOutput: "" }
-  ]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // States cho Form Bài tập
+  const [showAddExercise, setShowAddExercise] = useState(false);
+  const [isEditModeEx, setIsEditModeEx] = useState(false);
+  const [newExercise, setNewExercise] = useState({ id: 0, title: "", description: "", difficulty: "Easy", lessonId: "" });
+  const [testCases, setTestCases] = useState<TestCase[]>([{ input: "", expectedOutput: "" }]);
+  const [selectedCourseIdEx, setSelectedCourseIdEx] = useState("");
+
+  // States cho Form Khóa học
+  const [showAddCourse, setShowAddCourse] = useState(false);
+  const [isEditModeCourse, setIsEditModeCourse] = useState(false);
+  const [newCourse, setNewCourse] = useState({ id: 0, title: "" });
+
+  // States cho Form Bài học
+  const [showAddLesson, setShowAddLesson] = useState(false);
+  const [isEditModeLesson, setIsEditModeLesson] = useState(false);
+  const [newLesson, setNewLesson] = useState({ id: 0, courseId: "", title: "", orderNum: 1, content: "Nội dung bài học..." });
 
   useEffect(() => {
     if (!user) {
       navigate("/login");
       return;
     }
-    fetchExercises();
-    fetchStudentStats();
+    fetchAllData();
   }, [user]);
 
-  const fetchExercises = async () => {
+  const fetchAllData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/Exercises`);
-      if (response.ok) {
-        const data = await response.json();
-        setExercises(data);
-      }
+      const [resCourses, resLessons, resExercises, resStats] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/Courses`),
+        fetch(`${API_BASE_URL}/api/Lessons`),
+        fetch(`${API_BASE_URL}/api/Exercises`),
+        fetch(`${API_BASE_URL}/api/UserProfile/stats`)
+      ]);
+      if (resCourses.ok) setCourses(await resCourses.json());
+      if (resLessons.ok) setLessons(await resLessons.json());
+      if (resExercises.ok) setExercises(await resExercises.json());
+      if (resStats.ok) setStudentStats(await resStats.json());
     } catch (error) {
-      toast({ title: "Lỗi kết nối", description: "Không thể lấy danh sách bài tập từ C#.", variant: "destructive" });
+      toast({ title: "Lỗi kết nối", description: "Không thể tải dữ liệu từ máy chủ.", variant: "destructive" });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchStudentStats = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/UserProfile/stats`);
-      if (response.ok) {
-        const data = await response.json();
-        setStudentStats(data);
-      }
-    } catch (error) {
-      console.error("Lỗi lấy thống kê sinh viên:", error);
     }
   };
 
@@ -112,14 +122,14 @@ const Dashboard = () => {
         method: "PUT",
         headers: { 
           "Content-Type": "application/json",
-          // "Authorization": `Bearer ${localStorage.getItem("jwt_token")}` 
+          "Authorization": `Bearer ${token}` 
         },
         body: JSON.stringify({ email, role: newRole }),
       });
 
       if (response.ok) {
         toast({ title: "Thành công!", description: `Đã thay đổi quyền tài khoản ${email}.` });
-        fetchStudentStats();
+        fetchAllData(); // Refresh data
       } else {
         toast({ title: "Lỗi", description: "Không thể đổi quyền.", variant: "destructive" });
       }
@@ -128,105 +138,191 @@ const Dashboard = () => {
     }
   };
 
-  const addTestCase = () => setTestCases([...testCases, { input: "", expectedOutput: "" }]);
-  const removeTestCase = (index: number) => {
-    if (testCases.length > 1) setTestCases(testCases.filter((_, i) => i !== index));
-  };
-  const updateTestCase = (index: number, field: keyof TestCase, value: string) => {
-    const newTestCases = [...testCases];
-    newTestCases[index][field] = value;
-    setTestCases(newTestCases);
-  };
-
-  const handleOpenAdd = () => {
-    setIsEditMode(false);
-    setEditingId(null);
-    setNewExercise({ title: "", description: "", difficulty: "Easy" });
-    setTestCases([{ input: "", expectedOutput: "" }]);
+  // ============================== LOGIC KHÓA HỌC ==============================
+  const handleOpenCourseDialog = (course?: Course) => {
+    if (course) {
+      setIsEditModeCourse(true);
+      setNewCourse(course);
+    } else {
+      setIsEditModeCourse(false);
+      setNewCourse({ id: 0, title: "" });
+    }
     setShowAddCourse(true);
   };
 
-  const handleOpenEdit = (exercise: Exercise) => {
-    setIsEditMode(true);
-    setEditingId(exercise.id);
-    setNewExercise({
-      title: exercise.title,
-      description: exercise.description,
-      difficulty: exercise.difficulty || "Easy"
-    });
-    
+  const handleSaveCourse = async () => {
+    if (!newCourse.title.trim()) return toast({ title: "Lỗi", description: "Vui lòng nhập tên Khóa học", variant: "destructive" });
+    setIsSubmitting(true);
     try {
-      if (exercise.testCases) {
+      const url = isEditModeCourse ? `${API_BASE_URL}/api/Courses/${newCourse.id}` : `${API_BASE_URL}/api/Courses`;
+      const method = isEditModeCourse ? "PUT" : "POST";
+      const response = await fetch(url, {
+        method, 
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, 
+        body: JSON.stringify(newCourse),
+      });
+      if (response.ok) {
+        toast({ title: "Thành công!", description: "Đã lưu Khóa học." });
+        setShowAddCourse(false); 
+        fetchAllData();
+      } else throw new Error("Lỗi API");
+    } catch (e) { 
+      toast({ title: "Lỗi", description: "Không thể lưu", variant: "destructive" }); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
+  };
+
+  const handleDeleteCourse = async (id: number) => {
+    if (!window.confirm("Xóa khóa học này có thể làm lỗi các Bài học bên trong. Bạn chắc chắn chứ?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/Courses/${id}`, { 
+        method: 'DELETE', 
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) { 
+        toast({ title: "Đã xóa" }); 
+        fetchAllData(); 
+      } else {
+        toast({ title: "Lỗi xóa", variant: "destructive" });
+      }
+    } catch (e) {
+      toast({ title: "Lỗi", variant: "destructive" });
+    }
+  };
+
+  // ============================== LOGIC BÀI HỌC ==============================
+  const handleOpenLessonDialog = (lesson?: Lesson) => {
+    if (lesson) {
+      setIsEditModeLesson(true);
+      setNewLesson({ ...lesson, courseId: lesson.courseId.toString() });
+    } else {
+      setIsEditModeLesson(false);
+      setNewLesson({ id: 0, courseId: "", title: "", orderNum: 1, content: "Nội dung bài học..." });
+    }
+    setShowAddLesson(true);
+  };
+
+  const handleSaveLesson = async () => {
+    if (!newLesson.title.trim() || !newLesson.courseId) return toast({ title: "Lỗi", description: "Vui lòng nhập đủ thông tin", variant: "destructive" });
+    setIsSubmitting(true);
+    try {
+      const payload = { ...newLesson, courseId: parseInt(newLesson.courseId) };
+      const url = isEditModeLesson ? `${API_BASE_URL}/api/Lessons/${newLesson.id}` : `${API_BASE_URL}/api/Lessons`;
+      const method = isEditModeLesson ? "PUT" : "POST";
+      const response = await fetch(url, {
+        method, 
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, 
+        body: JSON.stringify(payload),
+      });
+      if (response.ok) {
+        toast({ title: "Thành công!", description: "Đã lưu Bài học." });
+        setShowAddLesson(false); 
+        fetchAllData();
+      } else throw new Error("Lỗi API");
+    } catch (e) { 
+      toast({ title: "Lỗi", description: "Không thể lưu", variant: "destructive" }); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
+  };
+
+  const handleDeleteLesson = async (id: number) => {
+    if (!window.confirm("Xóa Bài học này có thể làm lỗi các Bài tập bên trong. Chắc chắn xóa?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/Lessons/${id}`, { 
+        method: 'DELETE', 
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) { 
+        toast({ title: "Đã xóa" }); 
+        fetchAllData(); 
+      } else {
+        toast({ title: "Lỗi xóa", variant: "destructive" });
+      }
+    } catch(e) {
+      toast({ title: "Lỗi", variant: "destructive" });
+    }
+  };
+
+  // ============================== LOGIC BÀI TẬP ==============================
+  const handleOpenExerciseDialog = (exercise?: Exercise) => {
+    if (exercise) {
+      setIsEditModeEx(true);
+      setNewExercise({ ...exercise, lessonId: exercise.lessonId.toString() });
+      
+      const targetLesson = lessons.find(l => l.id === exercise.lessonId);
+      if (targetLesson) {
+        setSelectedCourseIdEx(targetLesson.courseId.toString());
+      }
+      
+      try { 
         const parsedTCs = JSON.parse(exercise.testCases);
         if (parsedTCs && parsedTCs.length > 0) {
           setTestCases(parsedTCs);
         } else {
           setTestCases([{ input: "", expectedOutput: "" }]);
         }
+      } catch { 
+        setTestCases([{ input: "", expectedOutput: "" }]); 
       }
-    } catch (e) {
+    } else {
+      setIsEditModeEx(false);
+      setNewExercise({ id: 0, title: "", description: "", difficulty: "Easy", lessonId: "" });
+      setSelectedCourseIdEx("");
       setTestCases([{ input: "", expectedOutput: "" }]);
     }
-    
-    setShowAddCourse(true);
+    setShowAddExercise(true);
   };
 
   const handleSaveExercise = async () => {
-    if (!newExercise.title.trim() || !newExercise.description.trim()) {
-      toast({ title: "Thiếu thông tin", description: "Vui lòng nhập đủ Tiêu đề và Mô tả", variant: "destructive" });
-      return;
-    }
-
+    if (!newExercise.title.trim() || !newExercise.lessonId) return toast({ title: "Lỗi", description: "Vui lòng chọn Bài học và nhập Tên bài tập", variant: "destructive" });
+    
     const validTestCases = testCases.filter(tc => tc.expectedOutput.trim() !== "");
-    if (validTestCases.length === 0) {
-      toast({ title: "Thiếu Test Case", description: "Phải có ít nhất 1 Test Case hợp lệ.", variant: "destructive" });
-      return;
-    }
+    if (validTestCases.length === 0) return toast({ title: "Lỗi", description: "Phải có ít nhất 1 Test Case hợp lệ.", variant: "destructive" });
 
     setIsSubmitting(true);
-    const payload = {
-      id: isEditMode ? editingId : 0,
-      title: newExercise.title,
-      description: newExercise.description,
-      difficulty: newExercise.difficulty,
-      testCases: JSON.stringify(validTestCases),
-      lessonId: 1
-    };
-
     try {
-      const url = isEditMode 
-        ? `${API_BASE_URL}/api/Exercises/${editingId}`
-        : `${API_BASE_URL}/api/Exercises`;
+      const payload = { 
+        ...newExercise, 
+        lessonId: parseInt(newExercise.lessonId), 
+        testCases: JSON.stringify(validTestCases) 
+      };
       
-      const method = isEditMode ? "PUT" : "POST";
-
+      const url = isEditModeEx ? `${API_BASE_URL}/api/Exercises/${newExercise.id}` : `${API_BASE_URL}/api/Exercises`;
+      const method = isEditModeEx ? "PUT" : "POST";
+      
       const response = await fetch(url, {
-        method: method,
-        headers: { "Content-Type": "application/json" },
+        method, 
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, 
         body: JSON.stringify(payload),
       });
-
+      
       if (response.ok) {
-        toast({ title: "Thành công!", description: isEditMode ? "Đã cập nhật bài tập." : "Đã thêm bài tập mới vào hệ thống." });
-        setShowAddCourse(false);
-        fetchExercises();
+        toast({ title: "Thành công!", description: "Đã lưu Bài tập." });
+        setShowAddExercise(false); 
+        fetchAllData();
       } else {
-        throw new Error("Lỗi máy chủ C#");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Lỗi máy chủ C#");
       }
-    } catch (error: any) {
-      toast({ title: "Lỗi lưu bài tập", description: error.message, variant: "destructive" });
-    } finally {
-      setIsSubmitting(false);
+    } catch (error: any) { 
+      toast({ title: "Lỗi", description: error.message, variant: "destructive" }); 
+    } finally { 
+      setIsSubmitting(false); 
     }
   };
 
   const handleDeleteExercise = async (id: number) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa bài tập này?")) return;
+    if (!window.confirm("Bạn chắc chắn muốn xóa bài tập này?")) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/api/Exercises/${id}`, { method: 'DELETE' });
-      if (response.ok) {
-        toast({ title: "Đã xóa bài tập" });
-        fetchExercises();
+      const res = await fetch(`${API_BASE_URL}/api/Exercises/${id}`, { 
+        method: 'DELETE', 
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) { 
+        toast({ title: "Đã xóa" }); 
+        fetchAllData(); 
       } else {
         toast({ title: "Lỗi xóa", description: "Không thể xóa (có thể đã có SV nộp bài).", variant: "destructive" });
       }
@@ -234,6 +330,10 @@ const Dashboard = () => {
       toast({ title: "Lỗi kết nối", description: "Lỗi server C#.", variant: "destructive" });
     }
   };
+
+  const addTestCase = () => setTestCases([...testCases, { input: "", expectedOutput: "" }]);
+  const removeTestCase = (i: number) => { if (testCases.length > 1) setTestCases(testCases.filter((_, idx) => idx !== i)); };
+  const updateTestCase = (i: number, f: keyof TestCase, v: string) => { const n = [...testCases]; n[i][f] = v; setTestCases(n); };
 
   const getDifficultyBadge = (diff: string) => {
     switch (diff?.toLowerCase()) {
@@ -244,7 +344,6 @@ const Dashboard = () => {
     }
   };
 
-  // 💡 CẬP NHẬT TÌM KIẾM 3: Lọc danh sách sinh viên theo từ khóa (Tên hoặc Email)
   const filteredStudents = studentStats.filter((student) => {
     const searchLower = searchTerm.toLowerCase();
     const nameMatch = student.fullName?.toLowerCase().includes(searchLower);
@@ -269,7 +368,7 @@ const Dashboard = () => {
             <h1 className="text-3xl font-bold text-foreground">
               Dashboard <span className="text-gradient-primary">Giảng viên</span>
             </h1>
-            <p className="mt-1 text-muted-foreground">Quản lý bài tập lập trình và theo dõi hệ thống</p>
+            <p className="mt-1 text-muted-foreground">Quản lý toàn diện hệ thống học tập</p>
           </div>
         </div>
 
@@ -297,30 +396,230 @@ const Dashboard = () => {
         </div>
 
         <Tabs defaultValue="exercises" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="exercises" className="gap-1.5"><BookOpen className="h-4 w-4" /> Quản lý Bài tập</TabsTrigger>
-            <TabsTrigger value="students" className="gap-1.5"><GraduationCap className="h-4 w-4" /> Quản lý Người dùng</TabsTrigger>
+          <TabsList className="flex flex-wrap h-auto gap-2 justify-start">
+            <TabsTrigger value="courses" className="gap-1.5"><Layers className="h-4 w-4" /> Khóa học</TabsTrigger>
+            <TabsTrigger value="lessons" className="gap-1.5"><FileText className="h-4 w-4" /> Bài học</TabsTrigger>
+            <TabsTrigger value="exercises" className="gap-1.5"><Code2 className="h-4 w-4" /> Bài tập</TabsTrigger>
+            <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" /> Người dùng</TabsTrigger>
             <TabsTrigger value="stats" className="gap-1.5"><BarChart3 className="h-4 w-4" /> Thống kê</TabsTrigger>
           </TabsList>
 
-          {/* TAB BÀI TẬP */}
+          {/* TAB 1: KHÓA HỌC */}
+          <TabsContent value="courses">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Quản lý Khóa học</CardTitle>
+                  <CardDescription>Danh mục các môn học lớn</CardDescription>
+                </div>
+                <Dialog open={showAddCourse} onOpenChange={setShowAddCourse}>
+                  <Button size="sm" onClick={() => handleOpenCourseDialog()} className="bg-gradient-primary text-primary-foreground hover:opacity-90">
+                    <Plus className="mr-1.5 h-4 w-4" /> Thêm khóa học
+                  </Button>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{isEditModeCourse ? "Sửa khóa học" : "Tạo khóa học mới"}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-4">
+                      <Input 
+                        placeholder="Tên khóa học (VD: Lập trình Python)" 
+                        value={newCourse.title} 
+                        onChange={e => setNewCourse({ ...newCourse, title: e.target.value })} 
+                      />
+                      <Button onClick={handleSaveCourse} disabled={isSubmitting} className="w-full bg-gradient-primary">
+                        {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : "Lưu Khóa học"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-16">ID</TableHead>
+                      <TableHead>Tên khóa học</TableHead>
+                      <TableHead className="text-right">Hành động</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {courses.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center text-muted-foreground py-8">Chưa có khóa học nào.</TableCell>
+                      </TableRow>
+                    ) : courses.map(c => (
+                      <TableRow key={c.id}>
+                        <TableCell>#{c.id}</TableCell>
+                        <TableCell className="font-semibold text-foreground">{c.title}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/10" onClick={() => handleOpenCourseDialog(c)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleDeleteCourse(c.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 2: BÀI HỌC */}
+          <TabsContent value="lessons">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Quản lý Bài học</CardTitle>
+                  <CardDescription>Các chương/bài học bên trong Khóa học</CardDescription>
+                </div>
+                <Dialog open={showAddLesson} onOpenChange={setShowAddLesson}>
+                  <Button size="sm" onClick={() => handleOpenLessonDialog()} className="bg-gradient-primary text-primary-foreground hover:opacity-90">
+                    <Plus className="mr-1.5 h-4 w-4" /> Thêm bài học
+                  </Button>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{isEditModeLesson ? "Sửa bài học" : "Tạo bài học mới"}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-4">
+                      <div>
+                        <label className="text-sm font-semibold mb-1 block">Thuộc Khóa học:</label>
+                        <Select value={newLesson.courseId} onValueChange={v => setNewLesson({ ...newLesson, courseId: v })}>
+                          <SelectTrigger><SelectValue placeholder="Chọn Khóa học" /></SelectTrigger>
+                          <SelectContent>
+                            {courses.map(c => (<SelectItem key={c.id} value={c.id.toString()}>{c.title}</SelectItem>))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div>
+                        <label className="text-sm font-semibold mb-1 block">Tên bài học:</label>
+                        <Input 
+                          placeholder="Tên bài học (VD: Vòng lặp For)" 
+                          value={newLesson.title} 
+                          onChange={e => setNewLesson({ ...newLesson, title: e.target.value })} 
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-semibold mb-1 block">Thứ tự hiển thị:</label>
+                        <Input 
+                          type="number" 
+                          placeholder="Số thứ tự (VD: 1)" 
+                          value={newLesson.orderNum} 
+                          onChange={e => setNewLesson({ ...newLesson, orderNum: parseInt(e.target.value) || 1 })} 
+                        />
+                      </div>
+
+                      <Button onClick={handleSaveLesson} disabled={isSubmitting} className="w-full bg-gradient-primary">
+                        {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : "Lưu Bài học"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-16">ID</TableHead>
+                      <TableHead>Thuộc Khóa học</TableHead>
+                      <TableHead>Tên bài học</TableHead>
+                      <TableHead className="text-right">Hành động</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lessons.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">Chưa có bài học nào.</TableCell>
+                      </TableRow>
+                    ) : lessons.map(l => (
+                      <TableRow key={l.id}>
+                        <TableCell>#{l.id}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-muted">
+                            {courses.find(c => c.id === l.courseId)?.title || "Unknown"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-semibold text-foreground">Bài {l.orderNum}: {l.title}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/10" onClick={() => handleOpenLessonDialog(l)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleDeleteLesson(l.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB 3: BÀI TẬP */}
           <TabsContent value="exercises">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Danh sách bài tập lập trình</CardTitle>
-                  <CardDescription>Các bài tập hiện có trong CSDL SQL Server</CardDescription>
+                  <CardDescription>Các bài tập thực hành giao cho sinh viên</CardDescription>
                 </div>
-                <Dialog open={showAddCourse} onOpenChange={setShowAddCourse}>
-                  <Button size="sm" onClick={handleOpenAdd} className="bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-glow">
+                <Dialog open={showAddExercise} onOpenChange={setShowAddExercise}>
+                  <Button size="sm" onClick={() => handleOpenExerciseDialog()} className="bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-glow">
                     <Plus className="mr-1.5 h-4 w-4" /> Thêm bài tập
                   </Button>
                   
                   <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle>{isEditMode ? "Sửa bài tập" : "Tạo bài tập mới"}</DialogTitle>
+                      <DialogTitle>{isEditModeEx ? "Sửa bài tập" : "Tạo bài tập mới"}</DialogTitle>
                     </DialogHeader>
+                    
                     <div className="space-y-4 mt-4">
+                      {/* CHỌN KHÓA HỌC & BÀI HỌC */}
+                      <div className="grid grid-cols-2 gap-3 p-3 bg-muted/30 rounded-lg border border-border">
+                        <div>
+                          <label className="text-xs font-semibold mb-1 block">Thuộc Khóa học:</label>
+                          <Select 
+                            value={selectedCourseIdEx} 
+                            onValueChange={(v) => { 
+                              setSelectedCourseIdEx(v); 
+                              setNewExercise({...newExercise, lessonId: ""}); // Đổi khóa học reset bài học
+                            }}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Chọn Khóa học..." /></SelectTrigger>
+                            <SelectContent>
+                              {courses.length === 0 && <SelectItem value="empty" disabled>Chưa có khóa học nào</SelectItem>}
+                              {courses.map(c => (
+                                <SelectItem key={c.id} value={c.id.toString()}>{c.title}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        <div>
+                          <label className="text-xs font-semibold mb-1 block">Thuộc Bài học (Lesson):</label>
+                          <Select 
+                            value={newExercise.lessonId} 
+                            onValueChange={v => setNewExercise({ ...newExercise, lessonId: v })} 
+                            disabled={!selectedCourseIdEx}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Chọn Bài học..." /></SelectTrigger>
+                            <SelectContent>
+                              {lessons.filter(l => l.courseId.toString() === selectedCourseIdEx).length === 0 
+                                ? <SelectItem value="empty" disabled>Khóa này chưa có bài học</SelectItem>
+                                : lessons.filter(l => l.courseId.toString() === selectedCourseIdEx).map(l => (
+                                    <SelectItem key={l.id} value={l.id.toString()}>Bài {l.orderNum}: {l.title}</SelectItem>
+                                  ))
+                              }
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
                       <Input 
                         placeholder="Tiêu đề bài tập (VD: Tính tổng 2 số)" 
                         value={newExercise.title} 
@@ -377,7 +676,7 @@ const Dashboard = () => {
                       </div>
 
                       <Button onClick={handleSaveExercise} disabled={isSubmitting} className="w-full bg-gradient-primary text-primary-foreground hover:opacity-90">
-                        {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (isEditMode ? "Cập nhật bài tập" : "Lưu vào hệ thống")}
+                        {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (isEditModeEx ? "Cập nhật bài tập" : "Lưu vào hệ thống")}
                       </Button>
                     </div>
                   </DialogContent>
@@ -389,6 +688,7 @@ const Dashboard = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-16">ID</TableHead>
+                      <TableHead>Thuộc Bài Học</TableHead>
                       <TableHead>Tên bài tập</TableHead>
                       <TableHead>Độ khó</TableHead>
                       <TableHead>Test Cases</TableHead>
@@ -398,7 +698,7 @@ const Dashboard = () => {
                   <TableBody>
                     {exercises.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">Chưa có bài tập nào. Hãy thêm mới!</TableCell>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">Chưa có bài tập nào. Hãy thêm mới!</TableCell>
                       </TableRow>
                     ) : exercises.map(ex => {
                       let tcCount = 0;
@@ -408,14 +708,19 @@ const Dashboard = () => {
                         <TableRow key={ex.id}>
                           <TableCell className="font-medium text-muted-foreground">#{ex.id}</TableCell>
                           <TableCell>
+                            <Badge variant="secondary" className="bg-muted">
+                              {lessons.find(l => l.id === ex.lessonId)?.title || "Không xác định"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
                             <p className="font-semibold text-foreground line-clamp-1">{ex.title}</p>
                           </TableCell>
                           <TableCell>{getDifficultyBadge(ex.difficulty)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary" className="font-mono bg-muted"><Code2 className="h-3 w-3 mr-1" /> {tcCount}</Badge>
+                            <Badge variant="outline" className="font-mono bg-background"><Code2 className="h-3 w-3 mr-1" /> {tcCount}</Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10" onClick={() => handleOpenEdit(ex)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10" onClick={() => handleOpenExerciseDialog(ex)}>
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDeleteExercise(ex.id)}>
@@ -431,10 +736,9 @@ const Dashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* TAB NGƯỜI DÙNG & ĐỔI QUYỀN */}
+          {/* TAB 4: NGƯỜI DÙNG & ĐỔI QUYỀN */}
           <TabsContent value="students">
             <Card>
-              {/* 💡 CẬP NHẬT TÌM KIẾM 4: Thêm Input Search vào Header */}
               <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <CardTitle>Quản lý Người dùng & Tiến độ</CardTitle>
@@ -521,7 +825,7 @@ const Dashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* TAB THỐNG KÊ */}
+          {/* TAB 5: THỐNG KÊ */}
           <TabsContent value="stats">
             <div className="grid md:grid-cols-2 gap-6">
               <Card>

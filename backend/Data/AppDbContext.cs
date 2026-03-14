@@ -17,5 +17,14 @@ namespace backend.Data
 
         // BẢNG MỚI: LƯU TRỮ LỊCH SỬ NỘP BÀI CỦA SINH VIÊN
         public DbSet<Submission> Submissions { get; set; }
+
+        // Hàm này giữ lại nhưng để trống, dành cho các cấu hình nâng cao sau này nếu cần
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            
+            // ĐÃ XÓA TOÀN BỘ SEED DATA. 
+            // Từ nay Khóa học và Bài học sẽ do Admin tự quản lý động trên Giao diện Web!
+        }
     }
 }
