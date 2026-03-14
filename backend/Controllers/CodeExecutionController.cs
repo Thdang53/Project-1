@@ -44,12 +44,19 @@ namespace backend.Controllers
                 return BadRequest(new { output = "Ngôn ngữ không được hỗ trợ." });
             }
 
-            string fileName = $"code_{Guid.NewGuid()}.{fileExtension}";
-            string filePath = Path.Combine(_tempFolder, fileName);
+            // 💡 TỐI ƯU 1: TẠO THƯ MỤC CÁCH LY CHO MỖI LẦN CHẠY
+            // Mỗi lần bấm "Chạy code", ta tạo 1 thư mục riêng biệt để không ai bị đè file của ai
+            string executionId = Guid.NewGuid().ToString();
+            string executionFolder = Path.Combine(_tempFolder, executionId);
+            Directory.CreateDirectory(executionFolder);
+
+            // Vì đã có thư mục riêng, ta cứ đặt tên file là main để code nhìn sạch hơn
+            string fileName = $"main.{fileExtension}"; 
+            string filePath = Path.Combine(executionFolder, fileName);
             await System.IO.File.WriteAllTextAsync(filePath, request.Code);
 
-            string inputFileName = $"input_{Guid.NewGuid()}.txt";
-            string inputFilePath = Path.Combine(_tempFolder, inputFileName);
+            string inputFileName = "input.txt";
+            string inputFilePath = Path.Combine(executionFolder, inputFileName);
             await System.IO.File.WriteAllTextAsync(inputFilePath, request.Input ?? "");
 
             string dockerImage = request.Language switch
@@ -75,7 +82,10 @@ namespace backend.Controllers
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "docker",
-                    Arguments = $"run --rm -v \"{_tempFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
+                    // 💡 TỐI ƯU 2: THÊM '--network none' ĐỂ BẢO MẬT
+                    // Ngăn chặn sinh viên viết code tải virus hoặc hack mạng trường
+                    // Mount đúng thư mục con 'executionFolder' thay vì mount toàn bộ '_tempFolder'
+                    Arguments = $"run --rm --network none -v \"{executionFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -115,8 +125,12 @@ namespace backend.Controllers
             }
             finally
             {
-                if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
-                if (System.IO.File.Exists(inputFilePath)) System.IO.File.Delete(inputFilePath);
+                // 💡 TỐI ƯU 3: DỌN RÁC
+                // Xóa toàn bộ thư mục cách ly sau khi chạy xong để đỡ đầy ổ cứng Server
+                if (Directory.Exists(executionFolder))
+                {
+                    Directory.Delete(executionFolder, true);
+                }
             }
         }
 
@@ -132,11 +146,9 @@ namespace backend.Controllers
             if (string.IsNullOrEmpty(exercise.TestCases))
                 return BadRequest(new { message = "Bài tập này chưa được cấu hình Test Case." });
 
-            // FIX CẢNH BÁO 1: Thêm dấu ? để khai báo list này có thể rỗng (nullable)
             List<TestCase>? testCases;
             try
             {
-                // FIX CẢNH BÁO 2: Thêm dấu ! sau exercise.TestCases để khẳng định biến này chắc chắn có chữ
                 testCases = JsonSerializer.Deserialize<List<TestCase>>(exercise.TestCases!, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
             catch
@@ -144,15 +156,12 @@ namespace backend.Controllers
                 return StatusCode(500, new { message = "Dữ liệu Test Case trong DB bị lỗi định dạng." });
             }
 
-            // FIX CẢNH BÁO 3: Chặn đứng lại nếu testCases bị rỗng để bảo vệ vòng lặp for phía dưới
             if (testCases == null) return BadRequest(new { message = "Lỗi khi đọc Test Cases." });
 
-            var results = new List<TestCaseResult>();
-            bool allPassed = true;
-
-            for (int i = 0; i < testCases.Count; i++)
+            // 💡 TỐI ƯU 4: CHẠY TEST CASE SONG SONG (PARALLEL)
+            // Thay vì dùng vòng lặp for chạy từng cái một (tuần tự), ta tạo ra 1 danh sách các "Nhiệm vụ" (Tasks)
+            var tasks = testCases.Select(async (tc, index) =>
             {
-                var tc = testCases[i];
                 var execResult = await RunCodeInDockerAsync(request.Language, request.Code, tc.Input);
 
                 bool passed = false;
@@ -161,24 +170,29 @@ namespace backend.Controllers
                     passed = execResult.Output.Trim() == tc.ExpectedOutput.Trim();
                 }
 
-                if (!passed) allPassed = false;
-
-                results.Add(new TestCaseResult
+                return new TestCaseResult
                 {
-                    Id = i + 1,
+                    Id = index + 1,
                     Passed = passed,
                     Input = tc.Input,
                     ExpectedOutput = tc.ExpectedOutput,
                     ActualOutput = execResult.IsError ? execResult.Error : execResult.Output.Trim()
-                });
-            }
+                };
+            });
 
+            // Bắt đầu chạy TẤT CẢ Test case cùng 1 lúc và chờ chúng hoàn thành
+            var resultsArray = await Task.WhenAll(tasks);
+            
+            // Sắp xếp lại kết quả theo đúng thứ tự Id (vì chạy song song có thể cái xong trước, cái xong sau)
+            var results = resultsArray.OrderBy(r => r.Id).ToList();
+
+            // Tính toán tổng kết
+            bool allPassed = results.All(r => r.Passed);
             int passedCount = results.Count(r => r.Passed);
             string finalStatus = allPassed ? "Accepted" : "Wrong Answer";
 
             // -----------------------------------------------------
-            // BƯỚC 2 (MỚI THÊM): LƯU KẾT QUẢ VÀO SQL SERVER
-            // Chỉ lưu nếu học viên có đăng nhập (có UserEmail gửi lên)
+            // BƯỚC 2: LƯU KẾT QUẢ VÀO SQL SERVER
             // -----------------------------------------------------
             if (!string.IsNullOrEmpty(request.UserEmail))
             {
@@ -195,7 +209,7 @@ namespace backend.Controllers
                 };
 
                 _context.Submissions.Add(submission);
-                await _context.SaveChangesAsync(); // Bấm nút "Lưu" vào SQL Server
+                await _context.SaveChangesAsync();
             }
 
             return Ok(new
@@ -208,7 +222,7 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // 3. API MỚI: LẤY LỊCH SỬ LÀM BÀI CỦA SINH VIÊN
+        // 3. API LẤY LỊCH SỬ LÀM BÀI CỦA SINH VIÊN
         // ==========================================
         [HttpGet("submissions/{email}")]
         public async Task<IActionResult> GetUserSubmissions(string email)
@@ -218,7 +232,6 @@ namespace backend.Controllers
                 return BadRequest("Email không hợp lệ.");
             }
 
-            // Lục trong CSDL tìm tất cả các lần nộp bài của sinh viên này, sắp xếp mới nhất lên đầu
             var submissions = await _context.Submissions
                 .Where(s => s.UserEmail == email)
                 .OrderByDescending(s => s.SubmittedAt)
@@ -241,12 +254,17 @@ namespace backend.Controllers
                 _ => "txt"
             };
 
-            string fileName = $"code_{Guid.NewGuid()}.{fileExtension}";
-            string filePath = Path.Combine(_tempFolder, fileName);
+            // 💡 Áp dụng "Thư mục cách ly" giống hàm RunCode
+            string executionId = Guid.NewGuid().ToString();
+            string executionFolder = Path.Combine(_tempFolder, executionId);
+            Directory.CreateDirectory(executionFolder);
+
+            string fileName = $"main.{fileExtension}";
+            string filePath = Path.Combine(executionFolder, fileName);
             await System.IO.File.WriteAllTextAsync(filePath, code);
 
-            string inputFileName = $"input_{Guid.NewGuid()}.txt";
-            string inputFilePath = Path.Combine(_tempFolder, inputFileName);
+            string inputFileName = "input.txt";
+            string inputFilePath = Path.Combine(executionFolder, inputFileName);
             await System.IO.File.WriteAllTextAsync(inputFilePath, input ?? "");
 
             string dockerImage = language switch
@@ -272,7 +290,8 @@ namespace backend.Controllers
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "docker",
-                    Arguments = $"run --rm -v \"{_tempFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
+                    // 💡 Áp dụng --network none và mount thư mục cách ly
+                    Arguments = $"run --rm --network none -v \"{executionFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -301,8 +320,11 @@ namespace backend.Controllers
             }
             finally
             {
-                if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
-                if (System.IO.File.Exists(inputFilePath)) System.IO.File.Delete(inputFilePath);
+                // 💡 Xóa thư mục cách ly
+                if (Directory.Exists(executionFolder))
+                {
+                    Directory.Delete(executionFolder, true);
+                }
             }
         }
     }

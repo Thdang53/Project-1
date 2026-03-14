@@ -1,12 +1,15 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { 
-  Code2, BookOpen, Clock, Trophy, 
-  LogOut, User, ChevronDown, CheckCircle2, History, Terminal
+  BookOpen, Clock, Trophy, 
+  CheckCircle2, History, Terminal
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
-// Import các UI Component (Sửa lại đường dẫn import)
+// 💡 CẬP NHẬT 1: Import Navbar
+import Navbar from "@/components/Navbar";
+
+// Import các UI Component
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -38,12 +41,12 @@ const StudentDashboard = () => {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
   
   const [completedExercises, setCompletedExercises] = useState<number[]>([]);
   
   const navigate = useNavigate();
-  const { user, signOut } = useAuth(); 
+  // Không cần signOut ở đây nữa vì Navbar đã lo việc đó
+  const { user } = useAuth(); 
   
   // Xử lý biến môi trường an toàn hơn
   const getApiUrl = () => {
@@ -113,93 +116,25 @@ const StudentDashboard = () => {
     return ex ? ex.title : `Bài tập #${id}`;
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate("/login");
-  };
-
-  const getInitials = () => {
-    if (user?.email) {
-      return user.email.substring(0, 2).toUpperCase();
-    }
-    return "SV";
-  };
-
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans">
-      <header className="bg-card/80 backdrop-blur-md border-b border-border px-6 h-16 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary group-hover:opacity-90 transition-opacity shadow-sm">
-              <Code2 className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold text-foreground tracking-tight">AI Learning Hub</span>
-          </Link>
-        </div>
-        
-        <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 text-accent rounded-full border border-accent/20 font-bold text-xs uppercase tracking-wider">
-                <Trophy className="h-3.5 w-3.5" /> 
-                {completedExercises.length * 10} XP
-            </div>
-          
-            <div className="relative">
-              <button 
-                onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-muted transition-colors focus:outline-none border border-transparent hover:border-border"
-              >
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs border border-primary/20">
-                  {getInitials()}
-                </div>
-                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
-              </button>
-
-              {showProfileMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)}></div>
-                  
-                  <div className="absolute right-0 mt-2 w-64 bg-card rounded-2xl shadow-elevated border border-border z-50 overflow-hidden animate-in fade-in zoom-in duration-200 origin-top-right">
-                    <div className="px-5 py-4 border-b border-border bg-muted/30">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Sinh viên</p>
-                      <p className="text-sm font-bold text-foreground truncate" title={user?.email}>
-                        {user?.email || "Chưa đăng nhập"}
-                      </p>
-                    </div>
-                    <div className="p-2">
-                      <Link 
-                        to="/profile" 
-                        onClick={() => setShowProfileMenu(false)}
-                        className="flex items-center gap-3 px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-primary rounded-xl transition-all group"
-                      >
-                        <div className="p-2 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors text-muted-foreground group-hover:text-primary">
-                          <User className="h-4 w-4" />
-                        </div>
-                        Hồ sơ của tôi
-                      </Link>
-                      
-                      <button 
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 rounded-xl transition-all group"
-                      >
-                        <div className="p-2 rounded-lg bg-destructive/10 transition-colors">
-                          <LogOut className="h-4 w-4" />
-                        </div>
-                        Đăng xuất
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-        </div>
-      </header>
+      {/* 💡 CẬP NHẬT 2: Sử dụng Navbar thay cho khối header cũ */}
+      <Navbar variant="default" />
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-6 md:p-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Chào mừng trở lại! 👋</h1>
-          <p className="text-muted-foreground text-lg">
-            Bạn đã hoàn thành <span className="font-bold text-primary">{completedExercises.length}/{exercises.length}</span> bài tập.
-          </p>
+        {/* 💡 CẬP NHẬT 3: Tái cấu trúc lại phần tiêu đề để chứa luôn Điểm XP */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 mt-2">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground mb-2">Chào mừng trở lại! 👋</h1>
+              <p className="text-muted-foreground text-lg">
+                Bạn đã hoàn thành <span className="font-bold text-primary">{completedExercises.length}/{exercises.length}</span> bài tập.
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-1.5 px-4 py-2 bg-accent/10 text-accent rounded-full border border-accent/20 font-bold text-sm uppercase tracking-wider w-fit">
+                <Trophy className="h-4 w-4" /> 
+                {completedExercises.length * 10} Điểm kinh nghiệm
+            </div>
         </div>
 
         <Tabs defaultValue="exercises" className="space-y-8">

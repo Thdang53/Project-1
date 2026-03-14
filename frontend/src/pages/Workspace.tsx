@@ -45,16 +45,17 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const Workspace = () => {
   const [searchParams] = useSearchParams();
-  const location = useLocation(); // LẤY DỮ LIỆU ĐƯỢC TRUYỀN SANG TỪ DASHBOARD
+  const location = useLocation();
   const exerciseId = searchParams.get("id");
 
-  // Kiểm tra xem có code cũ gửi sang không
   const pastCode = location.state?.pastCode;
   const pastLanguage = location.state?.pastLanguage;
 
-  // Nếu có pastCode thì hiển thị code cũ, không thì hiển thị mặc định
+  const draftKey = `draft_code_exercise_${exerciseId}`;
+  const savedDraft = exerciseId ? localStorage.getItem(draftKey) : null;
+
   const [language, setLanguage] = useState(pastLanguage || "python");
-  const [code, setCode] = useState(pastCode || defaultCode);
+  const [code, setCode] = useState(pastCode || savedDraft || defaultCode);
   
   const [activeTab, setActiveTab] = useState<"output" | "ai" | "grading">("output");
   const [showChat, setShowChat] = useState(true);
@@ -79,8 +80,23 @@ const Workspace = () => {
   ]);
   const [isChatLoading, setIsChatLoading] = useState(false);
 
-  const { user } = useAuth();
+  const [cooldown, setCooldown] = useState(0);
+
+  const { user, token } = useAuth();
   const userEmail = user?.email || "";
+
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cooldown]);
+
+  useEffect(() => {
+    if (exerciseId && code !== defaultCode) {
+      localStorage.setItem(`draft_code_exercise_${exerciseId}`, code);
+    }
+  }, [code, exerciseId]);
 
   useEffect(() => {
     const fetchUrl = exerciseId 
@@ -107,7 +123,10 @@ const Workspace = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/CodeExecution/run`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ language: language, code: code, input: customInput }),
       });
       const data = await response.json();
@@ -129,7 +148,10 @@ const Workspace = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/CodeExecution/submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ 
           language: language, 
           code: code, 
@@ -140,6 +162,10 @@ const Workspace = () => {
       
       const data = await response.json();
       setSubmitResult(data);
+
+      if (data.status === 'Accepted' && exerciseId) {
+        localStorage.removeItem(`draft_code_exercise_${exerciseId}`);
+      }
     } catch (error) {
       setSubmitResult({
         status: "Error",
@@ -153,55 +179,174 @@ const Workspace = () => {
     }
   };
 
+  // ==========================================
+  // 💡 NÂNG CẤP: AI FEEDBACK STREAMING MƯỢT MÀ
+  // ==========================================
   const handleAIFeedback = async () => {
+    if (cooldown > 0) return; 
+    
     setActiveTab("ai");
     setIsAILoading(true);
     setAiFeedback("Thầy đang đọc code của em... Đợi một chút nhé ⏳");
 
+    // Khởi tạo các biến cho bộ đệm gõ phím
+    let fullText = ""; // Chứa toàn bộ text tải về từ mạng
+    let displayedText = ""; // Chứa text thực tế hiện trên màn hình
+    let isStreamActive = true; // Cờ theo dõi API còn chạy không
+
+    // Bộ đếm nhịp gõ chữ: Cứ 15ms cập nhật thêm 1-2 ký tự lên màn hình
+    const typeInterval = setInterval(() => {
+      if (displayedText.length < fullText.length) {
+        // Cộng thêm tối đa 2 ký tự mỗi lần lặp để tốc độ gõ tự nhiên
+        displayedText += fullText.slice(displayedText.length, displayedText.length + 2);
+        setAiFeedback(displayedText);
+      } else if (!isStreamActive) {
+        // Nếu API đã tải xong VÀ màn hình đã in hết chữ thì dừng vòng lặp
+        clearInterval(typeInterval);
+      }
+    }, 15);
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/AIAssistant/analyze`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           code: code,
           language: language,
           errorOutput: output.includes("LỖI") ? output : "", 
-          userQuestion: ""
+          userQuestion: "",
+          exerciseTitle: exercise?.title || "",
+          exerciseDescription: exercise?.description || ""
         }),
       });
-      const data = await response.json();
-      setAiFeedback(data.feedback);
+
+      if (!response.ok) throw new Error("Lỗi API");
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.trim() === "") continue;
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                // Chỉ nhét data vào kho, không ép UI render ngay lập tức
+                fullText += data.text;
+              } catch (e) { }
+            }
+          }
+        }
+      }
     } catch (error) {
-      setAiFeedback("Lỗi mất kết nối đến Trợ giảng AI.");
+      fullText = "Lỗi mất kết nối đến Trợ giảng AI.";
     } finally {
       setIsAILoading(false);
+      isStreamActive = false; // Báo hiệu tải xong để dừng Interval
+      setCooldown(10); 
     }
   };
 
+  // ==========================================
+  // 💡 NÂNG CẤP: AI CHAT STREAMING MƯỢT MÀ
+  // ==========================================
   const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || cooldown > 0) return; 
+    
     const userMsg = chatInput;
-    setChatMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    const currentHistory = [...chatMessages];
+
+    setChatMessages(prev => [
+      ...prev, 
+      { role: "user", content: userMsg }, 
+      { role: "assistant", content: "" }
+    ]);
     setChatInput("");
     setIsChatLoading(true);
+
+    let fullText = ""; 
+    let displayedText = ""; 
+    let isStreamActive = true;
+
+    // Vòng lặp gõ chữ cho Chat
+    const typeInterval = setInterval(() => {
+      if (displayedText.length < fullText.length) {
+        displayedText += fullText.slice(displayedText.length, displayedText.length + 2);
+        
+        setChatMessages(prev => {
+          const newMsgs = [...prev];
+          newMsgs[newMsgs.length - 1].content = displayedText;
+          return newMsgs;
+        });
+      } else if (!isStreamActive) {
+        clearInterval(typeInterval);
+      }
+    }, 15);
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/AIAssistant/analyze`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           code: code,
           language: language,
           errorOutput: output.includes("LỖI") ? output : "",
-          userQuestion: userMsg
+          userQuestion: userMsg,
+          exerciseTitle: exercise?.title || "",
+          exerciseDescription: exercise?.description || "",
+          chatHistory: currentHistory
         }),
       });
-      const data = await response.json();
-      setChatMessages(prev => [...prev, { role: "assistant", content: data.feedback }]);
+
+      if (!response.ok) throw new Error("Lỗi API");
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      if (reader) {
+        setIsChatLoading(false); // Bắt đầu nhận mạng là tắt loading
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.trim() === "") continue;
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                fullText += data.text; // Nhét vào kho chứa
+              } catch (e) {}
+            }
+          }
+        }
+      }
     } catch (error) {
-      setChatMessages(prev => [...prev, { role: "assistant", content: "Lỗi kết nối AI." }]);
+      fullText = "Lỗi kết nối AI.";
     } finally {
       setIsChatLoading(false);
+      isStreamActive = false; // Báo hiệu đã xong luồng mạng
+      setCooldown(10);
     }
   };
 
@@ -223,10 +368,15 @@ const Workspace = () => {
             {userEmail || "Chưa đăng nhập"}
           </span>
           
-          {/* Thông báo nhỏ nếu đang xem code cũ */}
           {pastCode && (
             <span className="text-xs text-warning bg-warning/10 px-2 py-1 rounded ml-2 font-medium">
               Đang xem bản lưu cũ
+            </span>
+          )}
+          
+          {!pastCode && savedDraft && (
+            <span className="text-xs text-success bg-success/10 px-2 py-1 rounded ml-2 font-medium">
+              Đã khôi phục bản nháp
             </span>
           )}
         </div>
@@ -244,11 +394,11 @@ const Workspace = () => {
 
           <Button 
             onClick={handleAIFeedback}
-            disabled={isAILoading}
-            size="sm" variant="ghost" className="text-editor-foreground/60 hover:text-editor-foreground hover:bg-editor-line h-8"
+            disabled={isAILoading || cooldown > 0}
+            size="sm" variant="ghost" className="text-editor-foreground/60 hover:text-editor-foreground hover:bg-editor-line h-8 min-w-[80px]"
           >
             {isAILoading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin text-primary" /> : <BrainCircuit className="mr-1.5 h-4 w-4 text-primary" />} 
-            Hỏi AI
+            {cooldown > 0 ? `Đợi ${cooldown}s` : "Hỏi AI"}
           </Button>
           
           <Button 
@@ -307,14 +457,14 @@ const Workspace = () => {
                     <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                       msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-editor-line text-editor-foreground"
                     }`}>
-                      {msg.role === "assistant" ? <ReactMarkdown>{msg.content}</ReactMarkdown> : msg.content}
+                      {msg.role === "assistant" ? <ReactMarkdown>{msg.content || "..."}</ReactMarkdown> : msg.content}
                     </div>
                   </div>
                 ))}
                 {isChatLoading && (
                   <div className="flex justify-start">
                     <div className="bg-editor-line text-editor-foreground rounded-lg px-3 py-2 text-sm flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" /> AI đang gõ...
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" /> Đang gửi yêu cầu...
                     </div>
                   </div>
                 )}
@@ -325,11 +475,21 @@ const Workspace = () => {
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Hỏi AI về đoạn code..."
-                    className="flex-1 rounded-lg bg-editor-line px-3 py-2 text-sm text-editor-foreground placeholder:text-editor-foreground/30 outline-none focus:ring-1 focus:ring-primary"
+                    placeholder={cooldown > 0 ? `Đợi ${cooldown}s để hỏi tiếp...` : "Hỏi AI về đoạn code..."}
+                    disabled={cooldown > 0}
+                    className="flex-1 rounded-lg bg-editor-line px-3 py-2 text-sm text-editor-foreground placeholder:text-editor-foreground/30 outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
                   />
-                  <Button onClick={handleSendMessage} disabled={isChatLoading} size="sm" className="bg-gradient-primary text-primary-foreground h-9 w-9 p-0">
-                    <Send className="h-4 w-4" />
+                  <Button 
+                    onClick={handleSendMessage} 
+                    disabled={isChatLoading || cooldown > 0} 
+                    size="sm" 
+                    className="bg-gradient-primary text-primary-foreground h-9 w-9 p-0 disabled:opacity-50"
+                  >
+                    {cooldown > 0 ? (
+                      <span className="text-xs font-semibold">{cooldown}s</span>
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
               </div>
@@ -388,7 +548,7 @@ const Workspace = () => {
                   <textarea 
                     value={customInput}
                     onChange={(e) => setCustomInput(e.target.value)}
-                    placeholder="Nhập dữ liệu vào đây nếu code của bạn dùng hàm input()..."
+                    placeholder="Nhập dữ liệu vào đây nếu code của bạn dùng hàm input()...."
                     className="w-full h-24 bg-background border border-editor-line rounded-md p-2 text-sm font-mono text-editor-foreground focus:outline-none focus:border-primary/50 resize-none"
                   />
                 </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from "react";
+import { useState, useEffect, createContext, useContext, ReactNode, useRef } from "react";
 import { jwtDecode } from "jwt-decode";
 
 // Khuôn mẫu dữ liệu của một người dùng
@@ -22,8 +22,8 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any, user?: User }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: string | null, user?: User }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => void;
 }
 
@@ -43,6 +43,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // 💡 TỐI ƯU 1: Biến lưu trữ bộ đếm giờ để tự động đăng xuất
+  const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Hàm thiết lập hẹn giờ tự động đăng xuất khi Token hết hạn
+  const setupAutoLogout = (exp: number) => {
+    if (logoutTimerRef.current) {
+      clearTimeout(logoutTimerRef.current); // Xóa hẹn giờ cũ nếu có
+    }
+
+    const currentTime = Date.now() / 1000;
+    const timeLeft = (exp - currentTime) * 1000; // Đổi ra mili-giây
+
+    if (timeLeft > 0) {
+      logoutTimerRef.current = setTimeout(() => {
+        alert("Phiên đăng nhập của bạn đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.");
+        signOut();
+      }, timeLeft);
+    } else {
+      signOut();
+    }
+  };
 
   useEffect(() => {
     const savedToken = localStorage.getItem("jwt_token");
@@ -62,6 +84,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             fullName: decodedToken.FullName,
             role: decodedToken.Role,
           });
+          // Kích hoạt hẹn giờ tự động đăng xuất
+          setupAutoLogout(decodedToken.exp);
         }
       } catch (error) {
         console.error("Token không hợp lệ:", error);
@@ -80,7 +104,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         body: JSON.stringify({ email, password }),
       });
 
-      // BẢO VỆ: Nếu C# trả về lỗi HTML/Text thay vì JSON, chặn ngay lại
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const errorText = await response.text();
@@ -105,10 +128,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       setUser(userData);
 
-      // Trả về userData để màn hình Login biết phân quyền và chuyển hướng
+      // 💡 Giải mã token ngay khi vừa đăng nhập xong để thiết lập hẹn giờ tự động văng
+      const decodedToken = jwtDecode<JwtPayload>(data.token);
+      setupAutoLogout(decodedToken.exp);
+
       return { error: null, user: userData };
-    } catch (error: any) {
-      return { error };
+      
+    // 💡 TỐI ƯU 2: Sử dụng unknown thay vì any, giúp code chuẩn TypeScript hơn
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        return { error: error.message };
+      }
+      return { error: "Lỗi mạng hoặc lỗi không xác định" };
     }
   };
 
@@ -120,7 +151,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         body: JSON.stringify({ email, password, fullName }),
       });
 
-      // BẢO VỆ: Nếu C# sập và trả về HTML/Text, lấy text báo lỗi
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const errorText = await response.text();
@@ -135,8 +165,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       return { error: null };
-    } catch (error: any) {
-      return { error };
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        return { error: error.message };
+      }
+      return { error: "Lỗi mạng hoặc lỗi không xác định" };
     }
   };
 
@@ -144,6 +177,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem("jwt_token");
     setToken(null);
     setUser(null);
+    
+    // Dọn dẹp bộ đếm giờ khi người dùng chủ động đăng xuất
+    if (logoutTimerRef.current) {
+      clearTimeout(logoutTimerRef.current);
+    }
   };
 
   return (

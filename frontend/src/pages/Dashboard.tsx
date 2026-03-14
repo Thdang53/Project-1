@@ -12,7 +12,8 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { useToast } from "../hooks/use-toast";
-import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit } from "lucide-react";
+// 💡 CẬP NHẬT TÌM KIẾM 1: Import thêm icon Search
+import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit, Search } from "lucide-react";
 import { motion } from "framer-motion";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -39,7 +40,10 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   
   const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [studentStats, setStudentStats] = useState<any[]>([]); // Lưu dữ liệu sinh viên
+  const [studentStats, setStudentStats] = useState<any[]>([]);
+
+  // 💡 CẬP NHẬT TÌM KIẾM 2: Tạo biến lưu trữ từ khóa tìm kiếm
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Form Thêm/Sửa bài tập
   const [showAddCourse, setShowAddCourse] = useState(false);
@@ -60,7 +64,7 @@ const Dashboard = () => {
       return;
     }
     fetchExercises();
-    fetchStudentStats(); // Gọi API lấy thông tin sinh viên ngay khi tải trang
+    fetchStudentStats();
   }, [user]);
 
   const fetchExercises = async () => {
@@ -90,7 +94,40 @@ const Dashboard = () => {
     }
   };
 
-  // QUẢN LÝ TEST CASES
+  const handleToggleRole = async (email: string, currentRole: string) => {
+    if (user?.email === email) {
+      toast({ title: "Lỗi", description: "Bạn không thể tự hạ quyền của chính mình!", variant: "destructive" });
+      return;
+    }
+
+    const newRole = currentRole === "Admin" ? "Student" : "Admin";
+    const confirmMsg = newRole === "Admin" 
+      ? `Cấp quyền Quản trị viên (Admin) cho ${email}?` 
+      : `Hạ cấp ${email} xuống thành Sinh viên?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/UserProfile/role`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          // "Authorization": `Bearer ${localStorage.getItem("jwt_token")}` 
+        },
+        body: JSON.stringify({ email, role: newRole }),
+      });
+
+      if (response.ok) {
+        toast({ title: "Thành công!", description: `Đã thay đổi quyền tài khoản ${email}.` });
+        fetchStudentStats();
+      } else {
+        toast({ title: "Lỗi", description: "Không thể đổi quyền.", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Lỗi kết nối", description: "Server C# đang gặp sự cố.", variant: "destructive" });
+    }
+  };
+
   const addTestCase = () => setTestCases([...testCases, { input: "", expectedOutput: "" }]);
   const removeTestCase = (index: number) => {
     if (testCases.length > 1) setTestCases(testCases.filter((_, i) => i !== index));
@@ -101,7 +138,6 @@ const Dashboard = () => {
     setTestCases(newTestCases);
   };
 
-  // MỞ MODAL THÊM MỚI
   const handleOpenAdd = () => {
     setIsEditMode(false);
     setEditingId(null);
@@ -110,7 +146,6 @@ const Dashboard = () => {
     setShowAddCourse(true);
   };
 
-  // MỞ MODAL SỬA
   const handleOpenEdit = (exercise: Exercise) => {
     setIsEditMode(true);
     setEditingId(exercise.id);
@@ -136,7 +171,6 @@ const Dashboard = () => {
     setShowAddCourse(true);
   };
 
-  // LƯU BÀI TẬP VÀO CSDL (XỬ LÝ CẢ THÊM VÀ SỬA)
   const handleSaveExercise = async () => {
     if (!newExercise.title.trim() || !newExercise.description.trim()) {
       toast({ title: "Thiếu thông tin", description: "Vui lòng nhập đủ Tiêu đề và Mô tả", variant: "destructive" });
@@ -186,7 +220,6 @@ const Dashboard = () => {
     }
   };
 
-  // XÓA BÀI TẬP
   const handleDeleteExercise = async (id: number) => {
     if (!window.confirm("Bạn có chắc chắn muốn xóa bài tập này?")) return;
     try {
@@ -211,6 +244,14 @@ const Dashboard = () => {
     }
   };
 
+  // 💡 CẬP NHẬT TÌM KIẾM 3: Lọc danh sách sinh viên theo từ khóa (Tên hoặc Email)
+  const filteredStudents = studentStats.filter((student) => {
+    const searchLower = searchTerm.toLowerCase();
+    const nameMatch = student.fullName?.toLowerCase().includes(searchLower);
+    const emailMatch = student.email?.toLowerCase().includes(searchLower);
+    return nameMatch || emailMatch;
+  });
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -232,11 +273,10 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* CÁC THẺ THỐNG KÊ (ĐÃ CẬP NHẬT DỮ LIỆU THẬT) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
             { label: "Tổng số bài tập", value: exercises.length, icon: BookOpen, color: "text-primary" },
-            { label: "Tổng sinh viên", value: studentStats.length, icon: Users, color: "text-accent" },
+            { label: "Tổng người dùng", value: studentStats.length, icon: Users, color: "text-accent" },
             { label: "Tổng bài nộp đúng", value: studentStats.reduce((sum, s) => sum + s.completedExercises, 0), icon: Trophy, color: "text-success" },
             { label: "Trạng thái Server", value: "Online", icon: TrendingUp, color: "text-warning" },
           ].map((stat, i) => (
@@ -259,7 +299,7 @@ const Dashboard = () => {
         <Tabs defaultValue="exercises" className="space-y-6">
           <TabsList>
             <TabsTrigger value="exercises" className="gap-1.5"><BookOpen className="h-4 w-4" /> Quản lý Bài tập</TabsTrigger>
-            <TabsTrigger value="students" className="gap-1.5"><GraduationCap className="h-4 w-4" /> Sinh viên</TabsTrigger>
+            <TabsTrigger value="students" className="gap-1.5"><GraduationCap className="h-4 w-4" /> Quản lý Người dùng</TabsTrigger>
             <TabsTrigger value="stats" className="gap-1.5"><BarChart3 className="h-4 w-4" /> Thống kê</TabsTrigger>
           </TabsList>
 
@@ -276,7 +316,6 @@ const Dashboard = () => {
                     <Plus className="mr-1.5 h-4 w-4" /> Thêm bài tập
                   </Button>
                   
-                  {/* POPUP THÊM/SỬA BÀI TẬP */}
                   <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>{isEditMode ? "Sửa bài tập" : "Tạo bài tập mới"}</DialogTitle>
@@ -305,7 +344,6 @@ const Dashboard = () => {
                         </Select>
                       </div>
 
-                      {/* Quản lý Test Cases */}
                       <div className="pt-4 border-t border-border mt-4">
                         <div className="flex items-center justify-between mb-4">
                           <label className="text-sm font-semibold text-foreground">Dữ liệu chấm điểm (Test Cases)</label>
@@ -393,12 +431,26 @@ const Dashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* TAB SINH VIÊN (BẢNG THỐNG KÊ ĐÃ HOÀN THIỆN) */}
+          {/* TAB NGƯỜI DÙNG & ĐỔI QUYỀN */}
           <TabsContent value="students">
             <Card>
-              <CardHeader>
-                <CardTitle>Tiến độ sinh viên</CardTitle>
-                <CardDescription>Theo dõi chi tiết số lượng bài tập hoàn thành và hoạt động nộp code</CardDescription>
+              {/* 💡 CẬP NHẬT TÌM KIẾM 4: Thêm Input Search vào Header */}
+              <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Quản lý Người dùng & Tiến độ</CardTitle>
+                  <CardDescription>Theo dõi bài tập và phân quyền Admin cho hệ thống</CardDescription>
+                </div>
+                
+                <div className="relative w-full md:w-72">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Tìm theo tên hoặc email..."
+                    className="pl-9 bg-muted/50 focus:bg-background transition-colors"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -406,9 +458,9 @@ const Dashboard = () => {
                     <TableRow>
                       <TableHead>Họ và Tên</TableHead>
                       <TableHead>Email</TableHead>
-                      <TableHead className="text-center">Số lượt nộp bài</TableHead>
-                      <TableHead className="text-center">Bài tập hoàn thành</TableHead>
+                      <TableHead className="text-center">Số bài đúng</TableHead>
                       <TableHead className="text-right">Hoạt động gần nhất</TableHead>
+                      <TableHead className="text-center">Quyền hạn</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -416,16 +468,20 @@ const Dashboard = () => {
                       <TableRow>
                         <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
                           <GraduationCap className="h-8 w-8 mx-auto mb-3 opacity-20" />
-                          Chưa có sinh viên nào đăng ký hoặc nộp bài trong hệ thống.
+                          Chưa có người dùng nào đăng ký trong hệ thống.
                         </TableCell>
                       </TableRow>
-                    ) : studentStats.map((student, idx) => (
+                    ) : filteredStudents.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
+                          <Search className="h-8 w-8 mx-auto mb-3 opacity-20" />
+                          Không tìm thấy người dùng nào phù hợp với "{searchTerm}"
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredStudents.map((student, idx) => (
                       <TableRow key={idx}>
                         <TableCell className="font-bold text-foreground">{student.fullName}</TableCell>
                         <TableCell className="text-muted-foreground">{student.email}</TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="secondary" className="font-mono">{student.totalSubmissions}</Badge>
-                        </TableCell>
                         <TableCell className="text-center">
                           <span className={`font-bold ${student.completedExercises === exercises.length && exercises.length > 0 ? 'text-success' : 'text-primary'}`}>
                             {student.completedExercises}
@@ -437,6 +493,26 @@ const Dashboard = () => {
                             ? new Date(student.lastActive).toLocaleString('vi-VN') 
                             : 'Chưa có hoạt động'}
                         </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            {student.role === "Admin" ? (
+                               <Badge className="bg-destructive hover:bg-destructive cursor-help">Admin</Badge>
+                            ) : (
+                               <Badge variant="outline" className="cursor-help">Sinh viên</Badge>
+                            )}
+                            
+                            {user?.email !== student.email && (
+                              <Button 
+                                onClick={() => handleToggleRole(student.email, student.role)}
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-7 text-xs border border-border"
+                              >
+                                Đổi quyền
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -445,7 +521,7 @@ const Dashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* TAB THỐNG KÊ (BIỂU ĐỒ) */}
+          {/* TAB THỐNG KÊ */}
           <TabsContent value="stats">
             <div className="grid md:grid-cols-2 gap-6">
               <Card>

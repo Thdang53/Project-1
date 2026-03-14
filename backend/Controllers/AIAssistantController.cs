@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Net;
+using System.IO; // 👈 Cần thiết cho StreamReader
 
 namespace backend.Controllers
 {
@@ -17,14 +20,32 @@ namespace backend.Controllers
             _configuration = configuration;
         }
 
+        public class ChatMessage
+        {
+            public string Role { get; set; } = string.Empty;
+            public string Content { get; set; } = string.Empty;
+        }
+
         public class AIRequest
         {
             public string Code { get; set; } = string.Empty;
             public string Language { get; set; } = "python";
             public string ErrorOutput { get; set; } = string.Empty; 
             public string UserQuestion { get; set; } = string.Empty; 
+            public string ExerciseTitle { get; set; } = string.Empty;
+            public string ExerciseDescription { get; set; } = string.Empty;
+            public List<ChatMessage> ChatHistory { get; set; } = new();
         }
 
+        private string StripHTML(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return string.Empty;
+            string noHtml = Regex.Replace(input, "<.*?>", string.Empty);
+            string decodedText = WebUtility.HtmlDecode(noHtml);
+            return decodedText.Trim();
+        }
+
+        // 💡 GIỮ NGUYÊN IActionResult, TRẢ VỀ EmptyResult ĐỂ KHÔNG BỊ LỖI
         [HttpPost("analyze")]
         public async Task<IActionResult> AnalyzeCode([FromBody] AIRequest request)
         {
@@ -34,70 +55,134 @@ namespace backend.Controllers
                 return StatusCode(500, new { feedback = "Lỗi máy chủ: Chưa cấu hình Gemini API Key." });
             }
 
-            // ==========================================
-            // NGHỆ THUẬT PROMPT ENGINEERING (ĐÃ TỐI ƯU)
-            // ==========================================
-            string prompt = $"Bạn là một giảng viên IT nhiệt tình và xuất sắc. Ngôn ngữ lập trình hiện tại là {request.Language}.\n\n";
+            // 1. TẠO SYSTEM INSTRUCTION
+            string systemInstruction = $@"Bạn là một giảng viên IT nhiệt tình và xuất sắc. Ngôn ngữ lập trình hiện tại là {request.Language}.
+Nhiệm vụ của bạn:
+1. Đọc hiểu Tên bài tập và Yêu cầu đề bài.
+2. Đối chiếu code của sinh viên để tìm ra lỗ hổng thuật toán, sai logic hoặc hiểu sai đề.
+3. Nếu có Lịch sử trò chuyện, hãy dựa vào đó để trả lời tiếp mạch suy nghĩ của sinh viên một cách tự nhiên.
+4. Đưa ra gợi ý từng bước để sinh viên tự khắc phục. Tuyệt đối KHÔNG viết sẵn toàn bộ code.
+5. Luôn trả lời bằng định dạng Markdown đẹp mắt, thân thiện.";
 
-            // TRƯỜNG HỢP 1: Sinh viên CHAT (Có đặt câu hỏi cụ thể)
+            // 2. TẠO USER PROMPT
+            string userPrompt = "";
+
+            if (!string.IsNullOrEmpty(request.ExerciseTitle) || !string.IsNullOrEmpty(request.ExerciseDescription))
+            {
+                userPrompt += "--- [BỐI CẢNH BÀI TẬP] ---\n";
+                if (!string.IsNullOrEmpty(request.ExerciseTitle)) 
+                    userPrompt += $"Tên bài tập: {request.ExerciseTitle}\n";
+                if (!string.IsNullOrEmpty(request.ExerciseDescription)) 
+                    userPrompt += $"Yêu cầu: {StripHTML(request.ExerciseDescription)}\n\n";
+            }
+
+            userPrompt += $"--- [CODE HIỆN TẠI CỦA SINH VIÊN] ---\n```\n{request.Code}\n```\n\n";
+
+            if (!string.IsNullOrEmpty(request.ErrorOutput))
+            {
+                userPrompt += $"--- [LỖI HỆ THỐNG GHI NHẬN] ---\n```\n{request.ErrorOutput}\n```\n\n";
+            }
+
+            if (request.ChatHistory != null && request.ChatHistory.Count > 0)
+            {
+                userPrompt += "--- [LỊCH SỬ TRÒ CHUYỆN TRƯỚC ĐÓ] ---\n";
+                foreach (var msg in request.ChatHistory)
+                {
+                    string sender = msg.Role == "user" ? "Sinh viên" : "Bạn (AI)";
+                    if (!string.IsNullOrWhiteSpace(msg.Content)) 
+                    {
+                        userPrompt += $"{sender}: {msg.Content}\n";
+                    }
+                }
+                userPrompt += "\n";
+            }
+
             if (!string.IsNullOrEmpty(request.UserQuestion))
             {
-                prompt += $"Sinh viên hỏi bạn: \"{request.UserQuestion}\"\n\n";
-                prompt += "HƯỚNG DẪN TRẢ LỜI CHO BẠN (AI):\n";
-                prompt += "1. Nếu câu hỏi là kiến thức lập trình lý thuyết chung chung (ví dụ: vòng lặp là gì, if else là gì, hàm là gì...), hãy trả lời trực tiếp vào lý thuyết đó một cách dễ hiểu mà KHÔNG CẦN liên kết ép buộc với đoạn code sinh viên đang viết.\n";
-                prompt += "2. Nếu câu hỏi của sinh viên liên quan trực tiếp đến lỗi code (ví dụ: 'sao code em không chạy', 'lỗi này là gì'), hãy dựa vào [Tài liệu tham khảo] bên dưới để giải thích.\n";
-                prompt += "3. Luôn trả lời bằng định dạng Markdown đẹp mắt, thân thiện.\n\n";
-
-                // Chỉ đưa code vào như một tài liệu tham khảo đính kèm, không ép AI phải dùng
-                prompt += $"--- [TÀI LIỆU THAM KHẢO: Code hiện tại của sinh viên] ---\n```\n{request.Code}\n```\n";
-                if (!string.IsNullOrEmpty(request.ErrorOutput))
-                {
-                    prompt += $"--- [TÀI LIỆU THAM KHẢO: Lỗi hệ thống báo] ---\n```\n{request.ErrorOutput}\n```\n";
-                }
+                userPrompt += $"--- [CÂU HỎI MỚI NHẤT CỦA SINH VIÊN] ---\n\"{request.UserQuestion}\"\n\n";
+                userPrompt += "Dựa vào Code, Bối cảnh và Lịch sử trò chuyện, hãy trả lời câu hỏi mới nhất này.";
             }
-            // TRƯỜNG HỢP 2: Sinh viên BẤM NÚT "HỎI AI" (Không có câu hỏi, yêu cầu phân tích code)
             else
             {
-                prompt += $"Đây là đoạn code của sinh viên:\n```\n{request.Code}\n```\n";
-                if (!string.IsNullOrEmpty(request.ErrorOutput))
-                {
-                    prompt += $"Khi chạy thử, hệ thống báo lỗi sau:\n```\n{request.ErrorOutput}\n```\n";
-                }
-                prompt += "Hãy phân tích xem đoạn code trên có lỗi cú pháp hay logic nào không. Nếu có, hãy giải thích ngắn gọn và hướng dẫn cách sửa. Nếu code đúng, hãy khen ngợi và gợi ý cách viết tối ưu hơn. Trả về định dạng Markdown.";
+                userPrompt += "--- [YÊU CẦU PHÂN TÍCH] ---\n";
+                userPrompt += "Hãy phân tích đoạn code trên xem có đáp ứng đúng yêu cầu bài tập không. Có lỗi cú pháp hay logic thuật toán nào không?";
             }
-            // ==========================================
 
+            // 3. XÂY DỰNG PAYLOAD
             var payload = new
             {
-                contents = new[] { new { parts = new[] { new { text = prompt } } } }
+                systemInstruction = new { parts = new[] { new { text = systemInstruction } } },
+                contents = new[] { new { parts = new[] { new { text = userPrompt } } } },
+                generationConfig = new { temperature = 0.2 }
             };
 
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
             try
             {
-                string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
-                var response = await _httpClient.PostAsync(url, content);
-                var responseString = await response.Content.ReadAsStringAsync();
+                // Gọi API dạng stream (có tham số alt=sse)
+                string url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key={apiKey}";
+                var requestMessage = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+                
+                using var response = await _httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
 
-                using var doc = JsonDocument.Parse(responseString);
-                var root = doc.RootElement;
-
-                if (root.TryGetProperty("error", out var errorElement))
+                if (!response.IsSuccessStatusCode)
                 {
-                    return Ok(new { feedback = $"[LỖI TỪ GOOGLE]: {errorElement.GetProperty("message").GetString()}" });
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    return StatusCode((int)response.StatusCode, new { feedback = $"Lỗi từ Google Gemini: {responseString}" });
                 }
 
-                string aiResponse = root.GetProperty("candidates")[0]
-                                        .GetProperty("content")
-                                        .GetProperty("parts")[0]
-                                        .GetProperty("text").GetString() ?? "AI không có phản hồi.";
+                // 💡 CẤU HÌNH HEADERS CHO SSE CHUẨN MỰC
+                Response.ContentType = "text/event-stream";
+                Response.Headers.Add("Cache-Control", "no-cache");
+                Response.Headers.Add("Connection", "keep-alive");
+                await Response.Body.FlushAsync();
 
-                return Ok(new { feedback = aiResponse });
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
+
+                while (!reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync();
+                    if (!string.IsNullOrEmpty(line) && line.StartsWith("data: "))
+                    {
+                        var json = line.Substring(6); 
+                        if (json.Trim() == "[DONE]") continue;
+
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            var root = doc.RootElement;
+                            var candidates = root.GetProperty("candidates");
+                            if (candidates.GetArrayLength() > 0)
+                            {
+                                var parts = candidates[0].GetProperty("content").GetProperty("parts");
+                                if (parts.GetArrayLength() > 0 && parts[0].TryGetProperty("text", out var textElement))
+                                {
+                                    var text = textElement.GetString();
+                                    if (!string.IsNullOrEmpty(text))
+                                    {
+                                        var responsePayload = JsonSerializer.Serialize(new { text = text });
+                                        await Response.WriteAsync($"data: {responsePayload}\n\n");
+                                        await Response.Body.FlushAsync();
+                                    }
+                                }
+                            }
+                        }
+                        catch { /* Bỏ qua lỗi parsing của từng cục nhỏ để tiếp tục stream */ }
+                    }
+                }
+
+                // Trả về EmptyResult để kết thúc luồng an toàn mà không bị lỗi
+                return new EmptyResult();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { feedback = "Lỗi kết nối đến Google Gemini: " + ex.Message });
+                if (!Response.HasStarted)
+                {
+                    return StatusCode(500, new { feedback = "Lỗi kết nối đến Google Gemini: " + ex.Message });
+                }
+                return new EmptyResult();
             }
         }
     }

@@ -18,6 +18,12 @@ builder.Services.AddControllers();
 // =====================================
 var jwtKey = builder.Configuration["JwtSettings:SecretKey"];
 
+// 💡 CẬP NHẬT: Khóa chương trình ngay lập tức nếu quên cấu hình Key bảo mật
+if (string.IsNullOrEmpty(jwtKey))
+{
+    throw new InvalidOperationException("⚠️ LỖI NGHIÊM TRỌNG: Chưa cấu hình JwtSettings:SecretKey trong file appsettings.json!");
+}
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {

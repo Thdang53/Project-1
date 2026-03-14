@@ -78,22 +78,22 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // 3. API MỚI: LẤY THỐNG KÊ TIẾN ĐỘ SINH VIÊN (DÀNH CHO ADMIN)
+        // 3. API LẤY THỐNG KÊ TIẾN ĐỘ TẤT CẢ NGƯỜI DÙNG (DÀNH CHO ADMIN)
         // ==========================================
         [HttpGet("stats")]
         public async Task<IActionResult> GetStudentStats()
         {
-            // Lấy danh sách tất cả những người dùng có Role là "Student"
-            var users = await _context.Users.Where(u => u.Role == "Student").ToListAsync();
+            // 💡 CẬP NHẬT 1: Lấy TẤT CẢ người dùng (cả Admin và Student) để hiện lên bảng Dashboard quản lý
+            var users = await _context.Users.ToListAsync();
             
             // Lấy toàn bộ lịch sử nộp bài trong hệ thống
             var submissions = await _context.Submissions.ToListAsync();
 
-            // Tính toán thống kê cho từng sinh viên
+            // Tính toán thống kê cho từng người dùng
             var stats = users.Select(u => {
                 var userSubs = submissions.Where(s => s.UserEmail == u.Email).ToList();
                 
-                // Đếm số bài tập "khác nhau" mà sinh viên đã giải đúng (Accepted)
+                // Đếm số bài tập "khác nhau" mà người dùng đã giải đúng (Accepted)
                 var completedExercises = userSubs
                     .Where(s => s.Status == "Accepted")
                     .Select(s => s.ExerciseId)
@@ -103,6 +103,7 @@ namespace backend.Controllers
                 return new {
                     email = u.Email,
                     fullName = u.FullName,
+                    role = u.Role, // 💡 CẬP NHẬT 2: Trả về thêm Role để React vẽ giao diện phân quyền
                     totalSubmissions = userSubs.Count,
                     completedExercises = completedExercises,
                     lastActive = userSubs.OrderByDescending(s => s.SubmittedAt).FirstOrDefault()?.SubmittedAt
@@ -111,5 +112,42 @@ namespace backend.Controllers
 
             return Ok(stats);
         }
+
+        // ==========================================
+        // 4. API MỚI: CẤP HOẶC HẠ QUYỀN ADMIN CHO NGƯỜI DÙNG
+        // ==========================================
+        [HttpPut("role")]
+        // [Authorize(Roles = "Admin")] // 💡 Nên mở cờ này lên khi bảo vệ ứng dụng ở môi trường thật
+        public async Task<IActionResult> ChangeUserRole([FromBody] ChangeRoleRequest request)
+        {
+            if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Role))
+            {
+                return BadRequest(new { message = "Email hoặc Role không hợp lệ." });
+            }
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            if (user == null)
+            {
+                return NotFound(new { message = "Không tìm thấy người dùng này trong hệ thống." });
+            }
+
+            // Chỉ cho phép đổi thành "Admin" hoặc "Student"
+            if (request.Role != "Admin" && request.Role != "Student")
+            {
+                return BadRequest(new { message = "Role chỉ có thể là 'Admin' hoặc 'Student'." });
+            }
+
+            user.Role = request.Role;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = $"Đã cấp quyền {request.Role} cho tài khoản {request.Email} thành công!" });
+        }
+    }
+
+    // 💡 LỚP MODEL MỚI: Hứng dữ liệu đổi quyền từ Frontend gửi lên
+    public class ChangeRoleRequest
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
     }
 }
