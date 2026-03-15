@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization; // 💡 ĐÃ THÊM: Thư viện bảo mật phân quyền
+using Microsoft.AspNetCore.RateLimiting;
 using System.Diagnostics;
 using System.Text.Json;
 using backend.Models;
@@ -45,12 +47,10 @@ namespace backend.Controllers
             }
 
             // 💡 TỐI ƯU 1: TẠO THƯ MỤC CÁCH LY CHO MỖI LẦN CHẠY
-            // Mỗi lần bấm "Chạy code", ta tạo 1 thư mục riêng biệt để không ai bị đè file của ai
             string executionId = Guid.NewGuid().ToString();
             string executionFolder = Path.Combine(_tempFolder, executionId);
             Directory.CreateDirectory(executionFolder);
 
-            // Vì đã có thư mục riêng, ta cứ đặt tên file là main để code nhìn sạch hơn
             string fileName = $"main.{fileExtension}"; 
             string filePath = Path.Combine(executionFolder, fileName);
             await System.IO.File.WriteAllTextAsync(filePath, request.Code);
@@ -82,10 +82,8 @@ namespace backend.Controllers
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "docker",
-                    // 💡 TỐI ƯU 2: THÊM '--network none' ĐỂ BẢO MẬT
-                    // Ngăn chặn sinh viên viết code tải virus hoặc hack mạng trường
-                    // Mount đúng thư mục con 'executionFolder' thay vì mount toàn bộ '_tempFolder'
-                    Arguments = $"run --rm --network none -v \"{executionFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
+                    // 💡 TỐI ƯU 2: GIỚI HẠN RAM (256MB) VÀ CPU (0.5) ĐỂ CHỐNG "BOM RAM" + CHẶN MẠNG
+                    Arguments = $"run --rm --network none --memory=\"256m\" --cpus=\"0.5\" -v \"{executionFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -126,7 +124,6 @@ namespace backend.Controllers
             finally
             {
                 // 💡 TỐI ƯU 3: DỌN RÁC
-                // Xóa toàn bộ thư mục cách ly sau khi chạy xong để đỡ đầy ổ cứng Server
                 if (Directory.Exists(executionFolder))
                 {
                     Directory.Delete(executionFolder, true);
@@ -138,6 +135,8 @@ namespace backend.Controllers
         // 2. HÀM NỘP BÀI VÀ CHẤM ĐIỂM (CÓ LƯU VÀO DATABASE)
         // ==========================================
         [HttpPost("submit")]
+        [Authorize] // 💡 ĐÃ THÊM: Chỉ có sinh viên đăng nhập mới được phép gọi API nộp bài (tránh spam)
+        [EnableRateLimiting("ChongSpamCode")] // 💡 Gắn khiên chống Spam vào đây
         public async Task<IActionResult> SubmitCode([FromBody] SubmitCodeRequest request)
         {
             var exercise = await _context.Exercises.FindAsync(request.ExerciseId);
@@ -159,7 +158,6 @@ namespace backend.Controllers
             if (testCases == null) return BadRequest(new { message = "Lỗi khi đọc Test Cases." });
 
             // 💡 TỐI ƯU 4: CHẠY TEST CASE SONG SONG (PARALLEL)
-            // Thay vì dùng vòng lặp for chạy từng cái một (tuần tự), ta tạo ra 1 danh sách các "Nhiệm vụ" (Tasks)
             var tasks = testCases.Select(async (tc, index) =>
             {
                 var execResult = await RunCodeInDockerAsync(request.Language, request.Code, tc.Input);
@@ -180,20 +178,14 @@ namespace backend.Controllers
                 };
             });
 
-            // Bắt đầu chạy TẤT CẢ Test case cùng 1 lúc và chờ chúng hoàn thành
             var resultsArray = await Task.WhenAll(tasks);
-            
-            // Sắp xếp lại kết quả theo đúng thứ tự Id (vì chạy song song có thể cái xong trước, cái xong sau)
             var results = resultsArray.OrderBy(r => r.Id).ToList();
 
-            // Tính toán tổng kết
             bool allPassed = results.All(r => r.Passed);
             int passedCount = results.Count(r => r.Passed);
             string finalStatus = allPassed ? "Accepted" : "Wrong Answer";
 
-            // -----------------------------------------------------
-            // BƯỚC 2: LƯU KẾT QUẢ VÀO SQL SERVER
-            // -----------------------------------------------------
+            // LƯU KẾT QUẢ VÀO SQL SERVER
             if (!string.IsNullOrEmpty(request.UserEmail))
             {
                 var submission = new Submission
@@ -254,7 +246,6 @@ namespace backend.Controllers
                 _ => "txt"
             };
 
-            // 💡 Áp dụng "Thư mục cách ly" giống hàm RunCode
             string executionId = Guid.NewGuid().ToString();
             string executionFolder = Path.Combine(_tempFolder, executionId);
             Directory.CreateDirectory(executionFolder);
@@ -290,8 +281,8 @@ namespace backend.Controllers
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "docker",
-                    // 💡 Áp dụng --network none và mount thư mục cách ly
-                    Arguments = $"run --rm --network none -v \"{executionFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
+                    // 💡 TỐI ƯU 2: GIỚI HẠN RAM/CPU Ở TRONG TIẾN TRÌNH TEST CASE NGẦM NÀY NỮA
+                    Arguments = $"run --rm --network none --memory=\"256m\" --cpus=\"0.5\" -v \"{executionFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -320,7 +311,6 @@ namespace backend.Controllers
             }
             finally
             {
-                // 💡 Xóa thư mục cách ly
                 if (Directory.Exists(executionFolder))
                 {
                     Directory.Delete(executionFolder, true);

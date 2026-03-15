@@ -12,7 +12,8 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { useToast } from "../hooks/use-toast";
-import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit, Search, Layers, FileText } from "lucide-react";
+// 💡 ĐÃ BỔ SUNG THÊM ICON: CheckCircle2, Terminal
+import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit, Search, Layers, FileText, CheckCircle2, Terminal } from "lucide-react";
 import { motion } from "framer-motion";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -825,15 +826,136 @@ const Dashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* TAB 5: THỐNG KÊ */}
-          <TabsContent value="stats">
-            <div className="grid md:grid-cols-2 gap-6">
-              <Card>
+          {/* TAB 5: THỐNG KÊ (ĐÃ ĐƯỢC NÂNG CẤP) */}
+          <TabsContent value="stats" className="space-y-6 focus:outline-none">
+            
+            {/* 1. KHU VỰC THẺ TỔNG QUAN (OVERVIEW CARDS) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="border-border shadow-sm">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-4 bg-primary/10 text-primary rounded-2xl">
+                    <Users className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Tổng Học Viên</p>
+                    <h3 className="text-3xl font-bold text-foreground">
+                      {studentStats.filter(s => s.role === 'Student').length}
+                    </h3>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border shadow-sm">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-4 bg-success/10 text-success rounded-2xl">
+                    <CheckCircle2 className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Tổng Lượt Nộp Bài</p>
+                    <h3 className="text-3xl font-bold text-foreground">
+                      {studentStats.reduce((sum, s) => sum + (s.totalSubmissions || 0), 0)}
+                    </h3>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border shadow-sm">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-4 bg-warning/10 text-warning rounded-2xl">
+                    <BookOpen className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Tổng Khóa Học</p>
+                    <h3 className="text-3xl font-bold text-foreground">{courses.length}</h3>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border shadow-sm">
+                <CardContent className="p-6 flex items-center gap-4">
+                  <div className="p-4 bg-destructive/10 text-destructive rounded-2xl">
+                    <Terminal className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Tổng Bài Tập</p>
+                    <h3 className="text-3xl font-bold text-foreground">{exercises.length}</h3>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* 2. BẢNG XẾP HẠNG & TIẾN ĐỘ HỌC VIÊN (Bên trái, chiếm 2 phần) */}
+              <Card className="border-border shadow-card overflow-hidden lg:col-span-2">
+                <div className="p-6 border-b border-border bg-card">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <Trophy className="h-5 w-5 text-warning" /> 
+                    Bảng Xếp Hạng & Tiến Độ Học Viên
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Theo dõi số lượng bài tập đã giải quyết và tần suất hoạt động của từng tài khoản.
+                  </p>
+                </div>
+                <CardContent className="p-0 overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableHead className="w-16 text-center py-4">Top</TableHead>
+                        <TableHead>Học viên</TableHead>
+                        <TableHead className="text-center">Tổng lượt nộp</TableHead>
+                        <TableHead className="text-center">Bài đã giải (PASS)</TableHead>
+                        <TableHead className="text-right pr-6">Hoạt động gần nhất</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {studentStats.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
+                            Chưa có dữ liệu thống kê.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        // Lọc những sinh viên có nộp bài hoặc là Student
+                        studentStats.filter(s => s.role === 'Student' || s.totalSubmissions > 0).map((stat, index) => (
+                          <TableRow key={stat.email} className="hover:bg-muted/30 transition-colors">
+                            <TableCell className="text-center font-bold">
+                              {index === 0 ? <span className="text-warning text-lg">🥇 1</span> : 
+                               index === 1 ? <span className="text-muted-foreground text-lg">🥈 2</span> : 
+                               index === 2 ? <span className="text-orange-400 text-lg">🥉 3</span> : 
+                               `#${index + 1}`}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-bold text-foreground">{stat.fullName || "Chưa cập nhật tên"}</div>
+                              <div className="text-sm text-muted-foreground">{stat.email}</div>
+                            </TableCell>
+                            <TableCell className="text-center font-mono">
+                              {stat.totalSubmissions || 0}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="font-bold text-success text-lg">{stat.completedExercises || 0}</span>
+                              <span className="text-muted-foreground text-xs ml-1">bài</span>
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-sm pr-6">
+                              {stat.lastActive 
+                                ? new Date(stat.lastActive).toLocaleString('vi-VN') 
+                                : "Chưa từng nộp bài"}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              {/* 3. BIỂU ĐỒ PHÂN BỐ (Bên phải, chiếm 1 phần) */}
+              <Card className="border-border shadow-card h-fit">
                 <CardHeader>
-                  <CardTitle>Phân bố bài tập theo độ khó</CardTitle>
+                  <CardTitle className="text-lg">Phân bố bài tập</CardTitle>
+                  <CardDescription>Theo dõi số lượng bài tập theo từng mức độ khó</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     {["Easy", "Medium", "Hard"].map(level => {
                       const count = exercises.filter(c => c.difficulty?.toLowerCase() === level.toLowerCase()).length;
                       const pct = exercises.length > 0 ? (count / exercises.length) * 100 : 0;
@@ -842,11 +964,11 @@ const Dashboard = () => {
                       
                       return (
                         <div key={level}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-foreground font-medium">{labels[level]}</span>
-                            <span className="text-muted-foreground">{count} bài</span>
+                          <div className="flex justify-between text-sm mb-1.5">
+                            <span className="text-foreground font-semibold">{labels[level]}</span>
+                            <span className="text-muted-foreground font-mono">{count} bài</span>
                           </div>
-                          <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div className="h-2.5 rounded-full bg-muted overflow-hidden">
                             <div className={`h-full rounded-full ${colors[level]} transition-all`} style={{ width: `${pct}%` }} />
                           </div>
                         </div>

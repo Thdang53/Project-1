@@ -134,14 +134,14 @@ Nhiệm vụ của bạn:
 
                 // 💡 CẤU HÌNH HEADERS CHO SSE CHUẨN MỰC
                 Response.ContentType = "text/event-stream";
-                Response.Headers.Add("Cache-Control", "no-cache");
-                Response.Headers.Add("Connection", "keep-alive");
+               Response.Headers.Append("Cache-Control", "no-cache");
+               Response.Headers.Append("Connection", "keep-alive");
                 await Response.Body.FlushAsync();
 
                 using var stream = await response.Content.ReadAsStreamAsync();
                 using var reader = new StreamReader(stream);
-
-                while (!reader.EndOfStream)
+            
+                while (!reader.EndOfStream!)
                 {
                     var line = await reader.ReadLineAsync();
                     if (!string.IsNullOrEmpty(line) && line.StartsWith("data: "))

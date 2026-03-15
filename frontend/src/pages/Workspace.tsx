@@ -35,11 +35,13 @@ interface SubmitResponse {
   message?: string;
 }
 
-const defaultCode = `# Code của bạn ở đây...
-def solve():
-  # Viết logic của bạn
-  pass
-`;
+// 💡 ĐÃ CẬP NHẬT: Bộ từ điển Code mẫu cho 4 ngôn ngữ
+const defaultTemplates: Record<string, string> = {
+  python: `# Code Python của bạn ở đây...\ndef solve():\n  # Viết logic của bạn\n  pass\n`,
+  cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n  // Code C++ của bạn ở đây...\n  \n  return 0;\n}\n`,
+  java: `import java.util.Scanner;\n\npublic class Main {\n  public static void main(String[] args) {\n    // Code Java của bạn ở đây...\n    \n  }\n}\n`,
+  javascript: `// Code JavaScript của bạn ở đây...\nfunction solve() {\n  // Viết logic của bạn\n  \n}\n`
+};
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -55,7 +57,9 @@ const Workspace = () => {
   const savedDraft = exerciseId ? localStorage.getItem(draftKey) : null;
 
   const [language, setLanguage] = useState(pastLanguage || "python");
-  const [code, setCode] = useState(pastCode || savedDraft || defaultCode);
+  
+  // 💡 ĐÃ CẬP NHẬT: Lấy code mẫu dựa theo ngôn ngữ hiện tại
+  const [code, setCode] = useState(pastCode || savedDraft || defaultTemplates[pastLanguage || "python"]);
   
   const [activeTab, setActiveTab] = useState<"output" | "ai" | "grading">("output");
   const [showChat, setShowChat] = useState(true);
@@ -93,7 +97,9 @@ const Workspace = () => {
   }, [cooldown]);
 
   useEffect(() => {
-    if (exerciseId && code !== defaultCode) {
+    // 💡 ĐÃ CẬP NHẬT: So sánh với các mẫu mặc định để không lưu rác vào LocalStorage
+    const isDefaultCode = Object.values(defaultTemplates).includes(code);
+    if (exerciseId && !isDefaultCode && code.trim() !== "") {
       localStorage.setItem(`draft_code_exercise_${exerciseId}`, code);
     }
   }, [code, exerciseId]);
@@ -114,6 +120,18 @@ const Workspace = () => {
         setIsLoading(false);
       });
   }, [exerciseId]);
+
+  // 💡 ĐÃ THÊM: Hàm xử lý chuyển đổi ngôn ngữ thông minh
+  const handleLanguageChange = (newLang: string) => {
+    const isDefaultCode = Object.values(defaultTemplates).includes(code);
+    
+    setLanguage(newLang);
+    
+    // Đổi code mẫu nếu sinh viên chưa code gì hoặc màn hình trống
+    if (isDefaultCode || code.trim() === "") {
+      setCode(defaultTemplates[newLang]);
+    }
+  };
 
   const handleRunCode = async () => {
     setIsExecuting(true);
@@ -179,9 +197,6 @@ const Workspace = () => {
     }
   };
 
-  // ==========================================
-  // 💡 NÂNG CẤP: AI FEEDBACK STREAMING MƯỢT MÀ
-  // ==========================================
   const handleAIFeedback = async () => {
     if (cooldown > 0) return; 
     
@@ -189,19 +204,15 @@ const Workspace = () => {
     setIsAILoading(true);
     setAiFeedback("Thầy đang đọc code của em... Đợi một chút nhé ⏳");
 
-    // Khởi tạo các biến cho bộ đệm gõ phím
-    let fullText = ""; // Chứa toàn bộ text tải về từ mạng
-    let displayedText = ""; // Chứa text thực tế hiện trên màn hình
-    let isStreamActive = true; // Cờ theo dõi API còn chạy không
+    let fullText = ""; 
+    let displayedText = ""; 
+    let isStreamActive = true; 
 
-    // Bộ đếm nhịp gõ chữ: Cứ 15ms cập nhật thêm 1-2 ký tự lên màn hình
     const typeInterval = setInterval(() => {
       if (displayedText.length < fullText.length) {
-        // Cộng thêm tối đa 2 ký tự mỗi lần lặp để tốc độ gõ tự nhiên
         displayedText += fullText.slice(displayedText.length, displayedText.length + 2);
         setAiFeedback(displayedText);
       } else if (!isStreamActive) {
-        // Nếu API đã tải xong VÀ màn hình đã in hết chữ thì dừng vòng lặp
         clearInterval(typeInterval);
       }
     }, 15);
@@ -243,7 +254,6 @@ const Workspace = () => {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                // Chỉ nhét data vào kho, không ép UI render ngay lập tức
                 fullText += data.text;
               } catch (e) { }
             }
@@ -254,14 +264,11 @@ const Workspace = () => {
       fullText = "Lỗi mất kết nối đến Trợ giảng AI.";
     } finally {
       setIsAILoading(false);
-      isStreamActive = false; // Báo hiệu tải xong để dừng Interval
+      isStreamActive = false; 
       setCooldown(10); 
     }
   };
 
-  // ==========================================
-  // 💡 NÂNG CẤP: AI CHAT STREAMING MƯỢT MÀ
-  // ==========================================
   const handleSendMessage = async () => {
     if (!chatInput.trim() || cooldown > 0) return; 
     
@@ -280,7 +287,6 @@ const Workspace = () => {
     let displayedText = ""; 
     let isStreamActive = true;
 
-    // Vòng lặp gõ chữ cho Chat
     const typeInterval = setInterval(() => {
       if (displayedText.length < fullText.length) {
         displayedText += fullText.slice(displayedText.length, displayedText.length + 2);
@@ -320,7 +326,7 @@ const Workspace = () => {
       let buffer = "";
 
       if (reader) {
-        setIsChatLoading(false); // Bắt đầu nhận mạng là tắt loading
+        setIsChatLoading(false); 
 
         while (true) {
           const { done, value } = await reader.read();
@@ -335,7 +341,7 @@ const Workspace = () => {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                fullText += data.text; // Nhét vào kho chứa
+                fullText += data.text; 
               } catch (e) {}
             }
           }
@@ -345,7 +351,7 @@ const Workspace = () => {
       fullText = "Lỗi kết nối AI.";
     } finally {
       setIsChatLoading(false);
-      isStreamActive = false; // Báo hiệu đã xong luồng mạng
+      isStreamActive = false; 
       setCooldown(10);
     }
   };
@@ -381,10 +387,11 @@ const Workspace = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* 💡 ĐÃ CẬP NHẬT: Gắn hàm handleLanguageChange vào Thẻ Select */}
           <select 
             value={language} 
-            onChange={(e) => setLanguage(e.target.value)}
-            className="h-8 rounded-md border border-editor-line bg-editor px-2 text-sm text-editor-foreground outline-none"
+            onChange={(e) => handleLanguageChange(e.target.value)}
+            className="h-8 rounded-md border border-editor-line bg-editor px-2 text-sm text-editor-foreground outline-none cursor-pointer"
           >
             <option value="python">Python</option>
             <option value="cpp">C++</option>

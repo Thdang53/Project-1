@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Models;
 
@@ -117,7 +118,7 @@ namespace backend.Controllers
         // 4. API MỚI: CẤP HOẶC HẠ QUYỀN ADMIN CHO NGƯỜI DÙNG
         // ==========================================
         [HttpPut("role")]
-        // [Authorize(Roles = "Admin")] // 💡 Nên mở cờ này lên khi bảo vệ ứng dụng ở môi trường thật
+        [Authorize(Roles = "Admin")] // 💡 Nên mở cờ này lên khi bảo vệ ứng dụng ở môi trường thật
         public async Task<IActionResult> ChangeUserRole([FromBody] ChangeRoleRequest request)
         {
             if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Role))
