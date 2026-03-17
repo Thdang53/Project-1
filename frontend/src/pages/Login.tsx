@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Code2, Mail, Lock, User, ArrowRight, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+// 💡 IMPORT THƯ VIỆN GOOGLE VÀO ĐÂY
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 
 const Login = () => {
   const [isRegister, setIsRegister] = useState(false);
@@ -14,7 +16,8 @@ const Login = () => {
   
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signIn, signUp } = useAuth();
+  // 💡 LẤY THÊM HÀM signInWithGoogle
+  const { user, signIn, signUp, signInWithGoogle } = useAuth();
   const { toast } = useToast();
 
   // Tự động chuyển hướng nếu đã đăng nhập thành công
@@ -44,11 +47,17 @@ const Login = () => {
 
     try {
       if (isRegister) {
-        // GỌI HÀM ĐĂNG KÝ CỦA C# (Truyền displayName vào trường fullName của hook)
+        // GỌI HÀM ĐĂNG KÝ CỦA C#
         const { error } = await signUp(email, password, displayName);
         
         if (error) {
-          throw new Error(error.message || "Đăng ký thất bại");
+          const errorMsg = error.toLowerCase();
+          
+          if (errorMsg.includes("already exists") || errorMsg.includes("đã tồn tại") || errorMsg.includes("conflict")) {
+            throw new Error("Email này đã được đăng ký! Vui lòng dùng email khác hoặc đăng nhập.");
+          } else {
+            throw new Error(error || "Không thể tạo tài khoản. Vui lòng thử lại sau.");
+          }
         } 
         
         toast({ title: "Đăng ký thành công!", description: "Tài khoản của bạn đã được tạo. Vui lòng đăng nhập." });
@@ -58,19 +67,18 @@ const Login = () => {
         
       } else {
         // GỌI HÀM ĐĂNG NHẬP CỦA C#
-        const { error, user: loggedInUser } = await signIn(email, password);
+        const { error } = await signIn(email, password);
         
         if (error) {
-          throw new Error(error.message || "Đăng nhập thất bại");
+          // Bắt lỗi đăng nhập sai
+          throw new Error("Sai email hoặc mật khẩu. Vui lòng kiểm tra lại.");
         }
         
         toast({ title: "Đăng nhập thành công!", description: "Chào mừng bạn quay trở lại." });
-        
-        // Điều hướng sẽ được xử lý tự động ở useEffect bên trên dựa vào biến user
       }
     } catch (error: any) {
       toast({ 
-        title: isRegister ? "Lỗi đăng ký" : "Lỗi đăng nhập", 
+        title: isRegister ? "Đăng ký thất bại" : "Đăng nhập thất bại", 
         description: error.message, 
         variant: "destructive" 
       });
@@ -129,7 +137,15 @@ const Login = () => {
               </div>
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">Mật khẩu</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-medium text-foreground block">Mật khẩu</label>
+                {/* Tính năng Quên mật khẩu sẽ được bổ sung ở Phase sau */}
+                {!isRegister && (
+                  <button type="button" className="text-xs text-primary hover:underline" onClick={() => alert("Tính năng cấp lại mật khẩu qua Email đang được phát triển.")}>
+                    Quên mật khẩu?
+                  </button>
+                )}
+              </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
@@ -155,6 +171,41 @@ const Login = () => {
               )}
             </Button>
           </form>
+
+          {/* 💡 NÚT ĐĂNG NHẬP GOOGLE NẰM Ở ĐÂY */}
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-background px-2 text-muted-foreground">Hoặc tiếp tục với</span>
+              </div>
+            </div>
+            
+            <div className="mt-6 flex justify-center">
+              <GoogleOAuthProvider clientId="920755384852-deu0vgnrhbs4ql97hdgb5pk8966sa990.apps.googleusercontent.com">
+                <GoogleLogin
+                  onSuccess={async (credentialResponse) => {
+                    if (credentialResponse.credential) {
+                      setSubmitting(true);
+                      const { error } = await signInWithGoogle(credentialResponse.credential);
+                      setSubmitting(false);
+                      if (error) {
+                        toast({ title: "Lỗi", description: error, variant: "destructive" });
+                      } else {
+                        toast({ title: "Thành công!", description: "Đăng nhập bằng Google thành công." });
+                      }
+                    }
+                  }}
+                  onError={() => {
+                    toast({ title: "Lỗi", description: "Đăng nhập Google bị hủy hoặc thất bại.", variant: "destructive" });
+                  }}
+                  useOneTap
+                />
+              </GoogleOAuthProvider>
+            </div>
+          </div>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {isRegister ? "Đã có tài khoản?" : "Chưa có tài khoản?"}{" "}

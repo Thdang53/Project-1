@@ -7,6 +7,8 @@ using System.Text;
 using backend.Data;
 using backend.Models;
 using BCrypt.Net;
+// 💡 THÊM THƯ VIỆN GOOGLE
+using Google.Apis.Auth; 
 
 namespace backend.Controllers
 {
@@ -64,7 +66,7 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // 2. API ĐĂNG NHẬP (LOGIN)
+        // 2. API ĐĂNG NHẬP (LOGIN BẰNG MẬT KHẨU)
         // ==========================================
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
@@ -99,6 +101,68 @@ namespace backend.Controllers
         }
 
         // ==========================================
+        // 3. API ĐĂNG NHẬP BẰNG GOOGLE (OAUTH 2.0)
+        // ==========================================
+        [HttpPost("google-login")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginDto request)
+        {
+            try
+            {
+                // 1. Xác thực thẻ của Google (Check với Client ID của bạn)
+                var settings = new GoogleJsonWebSignature.ValidationSettings()
+                {
+                    Audience = new List<string>() { "920755384852-deu0vgnrhbs4ql97hdgb5pk8966sa990.apps.googleusercontent.com" }
+                };
+
+                // Lấy thông tin (Email, Tên) từ thẻ của Google
+                var payload = await GoogleJsonWebSignature.ValidateAsync(request.Credential, settings);
+
+                // 2. Tìm xem user có trong Database của mình chưa
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
+
+                // Nếu chưa có -> Tạo tài khoản mới tự động
+                if (user == null)
+                {
+                    user = new User
+                    {
+                        Email = payload.Email,
+                        FullName = payload.Name,
+                        PasswordHash = "GOOGLE_OAUTH_ACCOUNT", // Người dùng Google không cần mật khẩu hệ thống
+                        Role = "Student" // Mặc định là sinh viên
+                    };
+                    _context.Users.Add(user);
+
+                    // Cùng lúc tạo luôn một Hồ sơ (Profile) trống
+                    var newProfile = new UserProfile
+                    {
+                        Email = payload.Email,
+                        FullName = payload.Name
+                    };
+                    _context.UserProfiles.Add(newProfile);
+
+                    await _context.SaveChangesAsync();
+                }
+
+                // 3. Cấp Token hệ thống của mình (Giống y hệt đăng nhập thường)
+                var token = GenerateJwtToken(user);
+
+                return Ok(new
+                {
+                    token,
+                    user = new { email = user.Email, fullName = user.FullName, role = user.Role }
+                });
+            }
+            catch (InvalidJwtException)
+            {
+                return Unauthorized(new { message = "Thẻ Google không hợp lệ hoặc đã hết hạn." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Lỗi máy chủ C#: " + ex.Message });
+            }
+        }
+
+        // ==========================================
         // HÀM BÍ MẬT: TẠO THẺ JWT
         // ==========================================
         private string GenerateJwtToken(User user)
@@ -119,7 +183,7 @@ namespace backend.Controllers
                 new Claim(JwtRegisteredClaimNames.Sub, user.Email),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email),
                 new Claim("FullName", user.FullName),
-                new Claim("Role", user.Role)
+                new Claim(ClaimTypes.Role, user.Role) // 💡 SỬA: Phải dùng thư viện ClaimTypes chuẩn của Microsoft
             };
 
             // 3. Đóng gói thẻ (Thời hạn 1 ngày)
@@ -130,5 +194,11 @@ namespace backend.Controllers
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+    }
+
+    // 💡 DTO ĐỂ NHẬN DỮ LIỆU TỪ FE
+    public class GoogleLoginDto
+    {
+        public string Credential { get; set; } = string.Empty;
     }
 }

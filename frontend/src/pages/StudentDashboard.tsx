@@ -223,7 +223,8 @@ const StudentDashboard = () => {
 
                               {/* Grid Bài tập của Bài học đó */}
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                                {lessonExercises.map(ex => {
+                                {/* 💡 ĐÃ SỬA: Thêm biến index vào vòng lặp .map() */}
+                                {lessonExercises.map((ex, index) => {
                                   const isCompleted = completedExercises.includes(ex.id);
                                   return (
                                     <div key={ex.id} className={`group p-5 rounded-2xl border transition-all duration-300 flex flex-col h-full ${
@@ -243,6 +244,8 @@ const StudentDashboard = () => {
                                       <h3 className={`text-lg font-bold mb-2 transition-colors line-clamp-2 ${
                                         isCompleted ? 'text-success' : 'text-card-foreground group-hover:text-primary'
                                       }`}>
+                                        {/* 💡 ĐÃ SỬA: Hiển thị "Bài 1", "Bài 2" tự động dựa vào index + 1 */}
+                                        <span className="text-muted-foreground mr-2 font-mono text-sm">Bài {index + 1}</span> 
                                         {ex.title}
                                       </h3>
                                       

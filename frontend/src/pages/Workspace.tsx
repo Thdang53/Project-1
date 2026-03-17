@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { 
   Code2, Send, Play, Upload, BrainCircuit, 
   MessageSquare, Terminal as TerminalIcon, 
-  BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code
+  BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code,
+  Maximize2, Minimize2 // 💡 Đã bổ sung Icon mở rộng/thu nhỏ
 } from "lucide-react";
 import ReactMarkdown from "react-markdown"; 
 import Editor from "@monaco-editor/react";
@@ -35,7 +36,6 @@ interface SubmitResponse {
   message?: string;
 }
 
-// 💡 ĐÃ CẬP NHẬT: Bộ từ điển Code mẫu cho 4 ngôn ngữ
 const defaultTemplates: Record<string, string> = {
   python: `# Code Python của bạn ở đây...\ndef solve():\n  # Viết logic của bạn\n  pass\n`,
   cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n  // Code C++ của bạn ở đây...\n  \n  return 0;\n}\n`,
@@ -57,12 +57,13 @@ const Workspace = () => {
   const savedDraft = exerciseId ? localStorage.getItem(draftKey) : null;
 
   const [language, setLanguage] = useState(pastLanguage || "python");
-  
-  // 💡 ĐÃ CẬP NHẬT: Lấy code mẫu dựa theo ngôn ngữ hiện tại
   const [code, setCode] = useState(pastCode || savedDraft || defaultTemplates[pastLanguage || "python"]);
   
   const [activeTab, setActiveTab] = useState<"output" | "ai" | "grading">("output");
   const [showChat, setShowChat] = useState(true);
+  
+  // 💡 THÊM STATE ĐỂ QUẢN LÝ MỞ RỘNG CHAT
+  const [isChatExpanded, setIsChatExpanded] = useState(false);
   
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -80,7 +81,7 @@ const Workspace = () => {
   
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([
-    { role: "assistant", content: "Xin chào! Mình là trợ giảng AI. Đọc kĩ đề bài và bắt đầu code nhé, nếu bí thì cứ hỏi mình!" },
+    { role: "assistant", content: "Mình là trợ giảng AI. Đọc kĩ đề bài và bắt đầu code nhé, nếu bí thì cứ hỏi mình!" },
   ]);
   const [isChatLoading, setIsChatLoading] = useState(false);
 
@@ -97,7 +98,6 @@ const Workspace = () => {
   }, [cooldown]);
 
   useEffect(() => {
-    // 💡 ĐÃ CẬP NHẬT: So sánh với các mẫu mặc định để không lưu rác vào LocalStorage
     const isDefaultCode = Object.values(defaultTemplates).includes(code);
     if (exerciseId && !isDefaultCode && code.trim() !== "") {
       localStorage.setItem(`draft_code_exercise_${exerciseId}`, code);
@@ -121,13 +121,9 @@ const Workspace = () => {
       });
   }, [exerciseId]);
 
-  // 💡 ĐÃ THÊM: Hàm xử lý chuyển đổi ngôn ngữ thông minh
   const handleLanguageChange = (newLang: string) => {
     const isDefaultCode = Object.values(defaultTemplates).includes(code);
-    
     setLanguage(newLang);
-    
-    // Đổi code mẫu nếu sinh viên chưa code gì hoặc màn hình trống
     if (isDefaultCode || code.trim() === "") {
       setCode(defaultTemplates[newLang]);
     }
@@ -387,7 +383,6 @@ const Workspace = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* 💡 ĐÃ CẬP NHẬT: Gắn hàm handleLanguageChange vào Thẻ Select */}
           <select 
             value={language} 
             onChange={(e) => handleLanguageChange(e.target.value)}
@@ -431,32 +426,44 @@ const Workspace = () => {
 
       <div className="flex-1 flex overflow-hidden">
         <div className="w-[30%] min-w-[300px] border-r border-editor-line flex flex-col">
-          <div className={`${showChat ? "flex-1" : "flex-[2]"} overflow-auto p-5 border-b border-editor-line`}>
-            <div className="flex items-center gap-2 text-primary mb-4">
-              <BookOpen className="h-5 w-5" />
-              <h2 className="font-semibold text-editor-foreground">Đề bài</h2>
+          
+          {/* 💡 CHỈ HIỂN THỊ ĐỀ BÀI KHI CHAT CHƯA ĐƯỢC MỞ RỘNG */}
+          {!isChatExpanded && (
+            <div className={`${showChat ? "flex-1" : "flex-[2]"} overflow-auto p-5 border-b border-editor-line`}>
+              <div className="flex items-center gap-2 text-primary mb-4">
+                <BookOpen className="h-5 w-5" />
+                <h2 className="font-semibold text-editor-foreground">Đề bài</h2>
+              </div>
+              <div className="space-y-4 text-sm text-editor-foreground/80 leading-relaxed">
+                {isLoading ? (
+                  <div className="animate-pulse space-y-3">
+                    <div className="h-4 bg-editor-line rounded w-3/4"></div>
+                  </div>
+                ) : exercise ? (
+                  <div className="prose prose-invert max-w-none">
+                    <p className="whitespace-pre-wrap">{exercise.description}</p>
+                  </div>
+                ) : (
+                  <p className="text-destructive">Không tìm thấy dữ liệu bài tập.</p>
+                )}
+              </div>
             </div>
-            <div className="space-y-4 text-sm text-editor-foreground/80 leading-relaxed">
-              {isLoading ? (
-                <div className="animate-pulse space-y-3">
-                  <div className="h-4 bg-editor-line rounded w-3/4"></div>
-                </div>
-              ) : exercise ? (
-                <div className="prose prose-invert max-w-none">
-                  <p className="whitespace-pre-wrap">{exercise.description}</p>
-                </div>
-              ) : (
-                <p className="text-destructive">Không tìm thấy dữ liệu bài tập.</p>
-              )}
-            </div>
-          </div>
+          )}
 
           {showChat && (
-            <div className="flex-1 flex flex-col min-h-[250px]">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-editor-line">
+            <div className="flex-1 flex flex-col min-h-[250px] transition-all">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-editor-line bg-editor-line/30">
                 <div className="flex items-center gap-2 text-sm font-medium text-editor-foreground">
                   <MessageSquare className="h-4 w-4 text-primary" /> Chat với AI
                 </div>
+                {/* 💡 NÚT MỞ RỘNG / THU NHỎ CHAT */}
+                <button 
+                  onClick={() => setIsChatExpanded(!isChatExpanded)}
+                  className="p-1.5 rounded hover:bg-editor-line text-editor-foreground/60 hover:text-primary transition-colors"
+                  title={isChatExpanded ? "Thu nhỏ (Hiện lại đề bài)" : "Mở rộng Chat"}
+                >
+                  {isChatExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </button>
               </div>
               <div className="flex-1 overflow-auto p-4 space-y-3">
                 {chatMessages.map((msg, i) => (

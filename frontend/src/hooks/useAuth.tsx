@@ -13,7 +13,8 @@ interface JwtPayload {
   sub: string;
   email: string;
   FullName: string;
-  Role: string;
+  Role?: string;
+  "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"?: string; // 💡 ĐÃ SỬA: Thêm Role chuẩn của .NET
   exp: number;
 }
 
@@ -24,6 +25,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null, user?: User }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: (credential: string) => Promise<{ error: string | null, user?: User }>; // 💡 THÊM DÒNG NÀY CHO GOOGLE LOGIN
   signOut: () => void;
 }
 
@@ -33,6 +35,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
+  signInWithGoogle: async () => ({ error: null }), // 💡 KHỞI TẠO MẶC ĐỊNH
   signOut: () => {},
 });
 
@@ -44,17 +47,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   
-  // 💡 TỐI ƯU 1: Biến lưu trữ bộ đếm giờ để tự động đăng xuất
+  // Biến lưu trữ bộ đếm giờ để tự động đăng xuất
   const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Hàm thiết lập hẹn giờ tự động đăng xuất khi Token hết hạn
   const setupAutoLogout = (exp: number) => {
     if (logoutTimerRef.current) {
-      clearTimeout(logoutTimerRef.current); // Xóa hẹn giờ cũ nếu có
+      clearTimeout(logoutTimerRef.current);
     }
 
     const currentTime = Date.now() / 1000;
-    const timeLeft = (exp - currentTime) * 1000; // Đổi ra mili-giây
+    const timeLeft = (exp - currentTime) * 1000;
 
     if (timeLeft > 0) {
       logoutTimerRef.current = setTimeout(() => {
@@ -79,12 +82,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           signOut();
         } else {
           setToken(savedToken);
+          
+          // 💡 ĐÃ SỬA: Đọc Role từ tên chuẩn của .NET JWT để không bị mất quyền khi Reload
+          const userRole = decodedToken["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"] || decodedToken.Role || "Student";
+          
           setUser({
             email: decodedToken.email,
             fullName: decodedToken.FullName,
-            role: decodedToken.Role,
+            role: userRole,
           });
-          // Kích hoạt hẹn giờ tự động đăng xuất
           setupAutoLogout(decodedToken.exp);
         }
       } catch (error) {
@@ -128,18 +134,47 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       setUser(userData);
 
-      // 💡 Giải mã token ngay khi vừa đăng nhập xong để thiết lập hẹn giờ tự động văng
       const decodedToken = jwtDecode<JwtPayload>(data.token);
       setupAutoLogout(decodedToken.exp);
 
       return { error: null, user: userData };
       
-    // 💡 TỐI ƯU 2: Sử dụng unknown thay vì any, giúp code chuẩn TypeScript hơn
     } catch (error: unknown) {
       if (error instanceof Error) {
         return { error: error.message };
       }
       return { error: "Lỗi mạng hoặc lỗi không xác định" };
+    }
+  };
+
+  // 💡 HÀM XỬ LÝ ĐĂNG NHẬP BẰNG GOOGLE
+  const signInWithGoogle = async (credential: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/Auth/google-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Đăng nhập Google thất bại");
+
+      localStorage.setItem("jwt_token", data.token);
+      setToken(data.token);
+      
+      const userData = { 
+        email: data.user.email, 
+        fullName: data.user.fullName, 
+        role: data.user.role 
+      };
+      setUser(userData);
+
+      const decodedToken = jwtDecode<JwtPayload>(data.token);
+      setupAutoLogout(decodedToken.exp);
+
+      return { error: null, user: userData };
+    } catch (error: any) {
+      return { error: error.message };
     }
   };
 
@@ -178,14 +213,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setToken(null);
     setUser(null);
     
-    // Dọn dẹp bộ đếm giờ khi người dùng chủ động đăng xuất
     if (logoutTimerRef.current) {
       clearTimeout(logoutTimerRef.current);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, signIn, signUp, signOut }}>
+    // 💡 ĐỪNG QUÊN TRUYỀN signInWithGoogle VÀO PROVIDER
+    <AuthContext.Provider value={{ user, token, loading, signIn, signUp, signInWithGoogle, signOut }}>
       {!loading && children}
     </AuthContext.Provider>
   );
