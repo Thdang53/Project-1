@@ -13,8 +13,9 @@ import Courses from "./pages/Courses";
 import Dashboard from "./pages/Dashboard";
 import StudentDashboard from "./pages/StudentDashboard";
 import Login from "./pages/Login";
-import Profile from "./pages/Profile"; // Import trang Profile mới tạo
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import AILesson from "./pages/AILesson"; // Thêm import cho trang AILesson
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            {/* CÁC TUYẾN ĐƯỜNG CÔNG CỘNG */}
             {/* Trang chủ công cộng */}
             <Route path="/" element={<Index />} />
             
@@ -37,17 +39,72 @@ const App = () => (
 
             {/* CÁC TUYẾN ĐƯỜNG ĐƯỢC BẢO VỆ (CẦN ĐĂNG NHẬP) */}
             
+            {/* Trang bài học AI chuẩn bị trước khi code */}
+            <Route 
+              path="/ai-lesson/:lessonId" 
+              element={
+                <ProtectedRoute>
+                  <AILesson />
+                </ProtectedRoute>
+              } 
+            />
+            {/* Route dự phòng nếu gọi /ai-lesson không có ID */}
+            <Route 
+              path="/ai-lesson" 
+              element={
+                <ProtectedRoute>
+                  <AILesson />
+                </ProtectedRoute>
+              } 
+            />
+
             {/* Trang gõ code và làm bài tập */}
-            <Route path="/workspace" element={<ProtectedRoute><Workspace /></ProtectedRoute>} /> 
+            <Route 
+              path="/workspace" 
+              element={
+                <ProtectedRoute>
+                  <Workspace />
+                </ProtectedRoute>
+              } 
+            /> 
+            <Route 
+              path="/workspace/:lessonId" 
+              element={
+                <ProtectedRoute>
+                  <Workspace />
+                </ProtectedRoute>
+              } 
+            />
             
             {/* Trang quản lý cho Admin/Giảng viên */}
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route 
+              path="/dashboard" 
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              } 
+            />
             
             {/* Trang danh sách bài tập của sinh viên */}
-            <Route path="/student-dashboard" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />
+            <Route 
+              path="/student-dashboard" 
+              element={
+                <ProtectedRoute>
+                  <StudentDashboard />
+                </ProtectedRoute>
+              } 
+            />
             
             {/* Trang Hồ sơ cá nhân của sinh viên */}
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route 
+              path="/profile" 
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              } 
+            />
             
             {/* Trang báo lỗi 404 */}
             <Route path="*" element={<NotFound />} />

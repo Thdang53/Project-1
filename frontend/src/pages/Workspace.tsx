@@ -1,15 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge"; 
 import { 
   Code2, Send, Play, Upload, BrainCircuit, 
   MessageSquare, Terminal as TerminalIcon, 
-  BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code,
-  Maximize2, Minimize2 // 💡 Đã bổ sung Icon mở rộng/thu nhỏ
+  BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code, X,
+  Maximize2, Minimize2 // 💡 Import 2 icon phóng to/thu nhỏ
 } from "lucide-react";
-import ReactMarkdown from "react-markdown"; 
 import Editor from "@monaco-editor/react";
 import { useAuth } from "../hooks/useAuth";
+
+import ReactMarkdown from "react-markdown"; 
+import remarkGfm from "remark-gfm"; 
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"; 
 
 interface Exercise {
   id: number;
@@ -18,6 +23,7 @@ interface Exercise {
   description: string;
   testCases: string;
   difficulty: string;
+  starterCode?: string; 
 }
 
 interface TestCaseResult {
@@ -45,13 +51,54 @@ const defaultTemplates: Record<string, string> = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+// =================================================================
+// 💡 CẤU HÌNH VẼ MARKDOWN & TÔ MÀU CODE
+// =================================================================
+const MarkdownComponents = {
+  code({ node, inline, className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || "");
+    return !inline && match ? (
+      <div className="relative group my-4">
+        <div className="absolute right-2 top-2 text-xs font-mono text-editor-foreground/40 bg-editor-line px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity uppercase z-10">
+          {match[1]}
+        </div>
+        <SyntaxHighlighter
+          style={vscDarkPlus}
+          language={match[1]}
+          PreTag="div"
+          className="rounded-lg border border-editor-line !bg-[#1e1e1e] !p-4 !my-0 shadow-inner font-mono text-sm leading-relaxed"
+          {...props}
+        >
+          {String(children).replace(/\n$/, "")}
+        </SyntaxHighlighter>
+      </div>
+    ) : (
+      <code className="bg-editor-line text-primary rounded px-1.5 py-0.5 font-mono text-sm" {...props}>
+        {children}
+      </code>
+    );
+  },
+  p: ({children}: any) => <p className="mb-4 last:mb-0 leading-relaxed text-editor-foreground/90">{children}</p>,
+  h1: ({children}: any) => <h1 className="text-xl font-bold text-primary mb-4 mt-6">{children}</h1>,
+  h2: ({children}: any) => <h2 className="text-lg font-bold text-primary mb-3 mt-5">{children}</h2>,
+  h3: ({children}: any) => <h3 className="font-semibold text-editor-foreground mb-2 mt-4">{children}</h3>,
+  ul: ({children}: any) => <ul className="list-disc pl-6 mb-4 space-y-1 text-editor-foreground/80">{children}</ul>,
+  ol: ({children}: any) => <ol className="list-decimal pl-6 mb-4 space-y-1 text-editor-foreground/80">{children}</ol>,
+  li: ({children}: any) => <li className="leading-relaxed">{children}</li>,
+  strong: ({children}: any) => <strong className="font-bold text-editor-foreground">{children}</strong>,
+  blockquote: ({children}: any) => <blockquote className="border-l-4 border-primary/50 pl-4 italic text-editor-foreground/60 my-4 bg-editor-line/30 py-2 rounded-r">{children}</blockquote>,
+};
+
 const Workspace = () => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const exerciseId = searchParams.get("id");
+  const exerciseId = searchParams.get("id") || location.pathname.split('/').pop();
 
   const pastCode = location.state?.pastCode;
   const pastLanguage = location.state?.pastLanguage;
+  
+  const isAIGenerated = location.state?.isAIGenerated;
+  const aiExerciseData = location.state?.exerciseData;
 
   const draftKey = `draft_code_exercise_${exerciseId}`;
   const savedDraft = exerciseId ? localStorage.getItem(draftKey) : null;
@@ -59,10 +106,10 @@ const Workspace = () => {
   const [language, setLanguage] = useState(pastLanguage || "python");
   const [code, setCode] = useState(pastCode || savedDraft || defaultTemplates[pastLanguage || "python"]);
   
-  const [activeTab, setActiveTab] = useState<"output" | "ai" | "grading">("output");
+  const [activeTab, setActiveTab] = useState<"output" | "grading" | "ai">("output");
   const [showChat, setShowChat] = useState(true);
   
-  // 💡 THÊM STATE ĐỂ QUẢN LÝ MỞ RỘNG CHAT
+  // 💡 STATE ĐỂ QUẢN LÝ VIỆC PHÓNG TO CHAT
   const [isChatExpanded, setIsChatExpanded] = useState(false);
   
   const [exercise, setExercise] = useState<Exercise | null>(null);
@@ -70,18 +117,17 @@ const Workspace = () => {
 
   const [output, setOutput] = useState(">>> Chờ chạy code...");
   const [isExecuting, setIsExecuting] = useState(false);
-  
   const [customInput, setCustomInput] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<SubmitResponse | null>(null);
 
-  const [aiFeedback, setAiFeedback] = useState("Nhấn 'Hỏi AI' để nhận phân tích chi tiết về code của bạn.");
+  const [aiFeedback, setAiFeedback] = useState("Nhấn 'Hỏi AI' ở góc trên để nhận phân tích chi tiết về code của bạn nhé.");
   const [isAILoading, setIsAILoading] = useState(false);
   
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([
-    { role: "assistant", content: "Mình là trợ giảng AI. Đọc kĩ đề bài và bắt đầu code nhé, nếu bí thì cứ hỏi mình!" },
+    { role: "assistant", content: "Xin chào! Mình là trợ giảng AI. Bạn cần hỗ trợ gì về bài tập này?" },
   ]);
   const [isChatLoading, setIsChatLoading] = useState(false);
 
@@ -105,26 +151,52 @@ const Workspace = () => {
   }, [code, exerciseId]);
 
   useEffect(() => {
-    const fetchUrl = exerciseId 
-      ? `${API_BASE_URL}/api/Exercises/${exerciseId}`
-      : `${API_BASE_URL}/api/Exercises/first`;
+    if (isAIGenerated && aiExerciseData) {
+      const exTitle = aiExerciseData.title || aiExerciseData.Title || "Bài tập AI";
+      const exDesc = aiExerciseData.description || aiExerciseData.Description || "Không có mô tả";
+      const exDiff = aiExerciseData.difficulty || aiExerciseData.Difficulty || "Cơ bản";
+      const exTests = aiExerciseData.testCases || aiExerciseData.TestCases || [];
+      const exStarterCode = aiExerciseData.starterCode || aiExerciseData.StarterCode || "";
 
-    fetch(fetchUrl)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.message) setExercise(data);
-        setIsLoading(false);
-      })
-      .catch((error) => {
-        console.error("Lỗi:", error);
-        setIsLoading(false);
+      setExercise({
+        id: Number(exerciseId),
+        lessonId: 0,
+        title: exTitle,
+        description: exDesc,
+        difficulty: exDiff,
+        testCases: JSON.stringify(exTests),
+        starterCode: exStarterCode
       });
-  }, [exerciseId]);
+      
+      if (!savedDraft && !pastCode && exStarterCode) {
+        setCode(exStarterCode);
+      }
+      setIsLoading(false);
+    } else {
+      const fetchUrl = exerciseId 
+        ? `${API_BASE_URL}/api/Exercises/${exerciseId}`
+        : `${API_BASE_URL}/api/Exercises/first`;
+
+      fetch(fetchUrl)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.message) setExercise(data);
+          setIsLoading(false);
+        })
+        .catch((error) => {
+          console.error("Lỗi:", error);
+          setIsLoading(false);
+        });
+    }
+  }, [exerciseId, isAIGenerated, aiExerciseData, savedDraft, pastCode]);
 
   const handleLanguageChange = (newLang: string) => {
     const isDefaultCode = Object.values(defaultTemplates).includes(code);
+    const isStarterCode = exercise?.starterCode === code;
+    
     setLanguage(newLang);
-    if (isDefaultCode || code.trim() === "") {
+    
+    if (isDefaultCode || isStarterCode || code.trim() === "") {
       setCode(defaultTemplates[newLang]);
     }
   };
@@ -132,19 +204,16 @@ const Workspace = () => {
   const handleRunCode = async () => {
     setIsExecuting(true);
     setActiveTab("output");
-    setOutput(">>> Đang đưa code vào Sandbox để chạy...");
+    setOutput(">>> Đang đưa code vào Sandbox để chạy...\n");
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/CodeExecution/run`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ language: language, code: code, input: customInput }),
       });
       const data = await response.json();
-      setOutput(data.output || "Không có kết quả in ra màn hình.");
+      setOutput(data.output || "Chương trình chạy thành công nhưng không có kết quả in ra màn hình.");
     } catch (error) {
       setOutput("Lỗi mất kết nối đến máy chủ Sandbox.");
     } finally {
@@ -154,26 +223,59 @@ const Workspace = () => {
 
   const handleSubmitCode = async () => {
     if (!exercise) return;
-    
     setIsSubmitting(true);
     setActiveTab("grading");
     setSubmitResult(null);
 
+    if (isAIGenerated) {
+      try {
+        const testCases = JSON.parse(exercise.testCases || "[]");
+        let passedCount = 0;
+        const results = [];
+
+        for (let i = 0; i < testCases.length; i++) {
+          const tc = testCases[i];
+          const runRes = await fetch(`${API_BASE_URL}/api/CodeExecution/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ language, code, input: tc.Input || tc.input || "" })
+          });
+          const runData = await runRes.json();
+          const actualOutput = (runData.output || "").trim();
+          const expectedOutput = (tc.ExpectedOutput || tc.expectedOutput || "").trim();
+          
+          const isPassed = actualOutput === expectedOutput;
+          if (isPassed) passedCount++;
+
+          results.push({
+            id: i + 1,
+            passed: isPassed,
+            input: tc.Input || tc.input || "",
+            expectedOutput: expectedOutput,
+            actualOutput: actualOutput
+          });
+        }
+
+        setSubmitResult({
+          status: passedCount === testCases.length ? "Accepted" : "Wrong Answer",
+          totalTests: testCases.length,
+          passedTests: passedCount,
+          results: results
+        });
+      } catch (e) {
+        setSubmitResult({ status: "Error", totalTests: 0, passedTests: 0, results: [], message: "Lỗi chạy Test Case" });
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/CodeExecution/submit`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-          language: language, 
-          code: code, 
-          exerciseId: exercise.id,
-          userEmail: userEmail 
-        }),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ language: language, code: code, exerciseId: exercise.id, userEmail: userEmail }),
       });
-      
       const data = await response.json();
       setSubmitResult(data);
 
@@ -181,13 +283,7 @@ const Workspace = () => {
         localStorage.removeItem(`draft_code_exercise_${exerciseId}`);
       }
     } catch (error) {
-      setSubmitResult({
-        status: "Error",
-        totalTests: 0,
-        passedTests: 0,
-        results: [],
-        message: "Không thể kết nối đến máy chủ chấm điểm."
-      });
+      setSubmitResult({ status: "Error", totalTests: 0, passedTests: 0, results: [], message: "Lỗi chấm điểm." });
     } finally {
       setIsSubmitting(false);
     }
@@ -198,7 +294,7 @@ const Workspace = () => {
     
     setActiveTab("ai");
     setIsAILoading(true);
-    setAiFeedback("Thầy đang đọc code của em... Đợi một chút nhé ⏳");
+    setAiFeedback("Đang đọc code của bạn... Đợi AI một chút nhé ⏳");
 
     let fullText = ""; 
     let displayedText = ""; 
@@ -216,10 +312,7 @@ const Workspace = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/AIAssistant/analyze`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
           code: code,
           language: language,
@@ -231,7 +324,6 @@ const Workspace = () => {
       });
 
       if (!response.ok) throw new Error("Lỗi API");
-
       const reader = response.body?.getReader();
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
@@ -271,11 +363,7 @@ const Workspace = () => {
     const userMsg = chatInput;
     const currentHistory = [...chatMessages];
 
-    setChatMessages(prev => [
-      ...prev, 
-      { role: "user", content: userMsg }, 
-      { role: "assistant", content: "" }
-    ]);
+    setChatMessages(prev => [...prev, { role: "user", content: userMsg }, { role: "assistant", content: "" }]);
     setChatInput("");
     setIsChatLoading(true);
 
@@ -286,7 +374,6 @@ const Workspace = () => {
     const typeInterval = setInterval(() => {
       if (displayedText.length < fullText.length) {
         displayedText += fullText.slice(displayedText.length, displayedText.length + 2);
-        
         setChatMessages(prev => {
           const newMsgs = [...prev];
           newMsgs[newMsgs.length - 1].content = displayedText;
@@ -300,10 +387,7 @@ const Workspace = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/AIAssistant/analyze`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
           code: code,
           language: language,
@@ -316,14 +400,12 @@ const Workspace = () => {
       });
 
       if (!response.ok) throw new Error("Lỗi API");
-
       const reader = response.body?.getReader();
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
 
       if (reader) {
         setIsChatLoading(false); 
-
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -354,39 +436,30 @@ const Workspace = () => {
 
   return (
     <div className="h-screen flex flex-col bg-editor">
+      {/* Top bar */}
       <div className="flex h-12 items-center justify-between border-b border-editor-line px-4">
         <div className="flex items-center gap-3">
-          <Link to="/student-dashboard" className="flex items-center gap-2 hover:opacity-80 transition">
+          <Link to="/student-dashboard" className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-primary">
               <Code2 className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-sm font-bold text-editor-foreground">Trở về</span>
+            <span className="text-sm font-bold text-editor-foreground">AI Learning Hub</span>
           </Link>
           <span className="text-editor-foreground/30">|</span>
-          <span className="text-sm font-medium text-editor-foreground">
-            {exercise ? exercise.title : "Đang tải..."}
+          <span className="text-sm text-editor-foreground/60 flex items-center gap-1.5">
+            <span className="uppercase text-primary font-mono text-xs">{language}</span> 
+            — Bài tập: {exercise ? exercise.title : "Đang tải..."}
           </span>
-          <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded ml-2">
-            {userEmail || "Chưa đăng nhập"}
-          </span>
-          
-          {pastCode && (
-            <span className="text-xs text-warning bg-warning/10 px-2 py-1 rounded ml-2 font-medium">
-              Đang xem bản lưu cũ
-            </span>
-          )}
-          
-          {!pastCode && savedDraft && (
-            <span className="text-xs text-success bg-success/10 px-2 py-1 rounded ml-2 font-medium">
-              Đã khôi phục bản nháp
-            </span>
+          {isAIGenerated && (
+             <Badge variant="outline" className="text-[10px] font-mono border-primary/30 text-primary bg-primary/5 px-1.5 py-0 rounded ml-2">AI GENERATED</Badge>
           )}
         </div>
+
         <div className="flex items-center gap-2">
           <select 
             value={language} 
             onChange={(e) => handleLanguageChange(e.target.value)}
-            className="h-8 rounded-md border border-editor-line bg-editor px-2 text-sm text-editor-foreground outline-none cursor-pointer"
+            className="h-8 bg-editor-line border-none text-sm text-editor-foreground rounded px-2 outline-none cursor-pointer"
           >
             <option value="python">Python</option>
             <option value="cpp">C++</option>
@@ -394,116 +467,128 @@ const Workspace = () => {
             <option value="javascript">JavaScript</option>
           </select>
 
-          <Button 
-            onClick={handleAIFeedback}
-            disabled={isAILoading || cooldown > 0}
-            size="sm" variant="ghost" className="text-editor-foreground/60 hover:text-editor-foreground hover:bg-editor-line h-8 min-w-[80px]"
-          >
-            {isAILoading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin text-primary" /> : <BrainCircuit className="mr-1.5 h-4 w-4 text-primary" />} 
-            {cooldown > 0 ? `Đợi ${cooldown}s` : "Hỏi AI"}
+          <Button onClick={handleAIFeedback} disabled={isAILoading || cooldown > 0} size="sm" variant="ghost" className="text-editor-foreground/60 hover:text-editor-foreground hover:bg-editor-line h-8">
+            {isAILoading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-1.5 h-4 w-4 text-primary" />} 
+            {cooldown > 0 ? `Chờ ${cooldown}s` : "Hỏi AI"}
           </Button>
-          
-          <Button 
-            onClick={handleRunCode}
-            disabled={isExecuting || isSubmitting}
-            size="sm" className="bg-success text-success-foreground hover:bg-success/90 h-8"
-          >
-            {isExecuting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
+          <Button onClick={handleRunCode} disabled={isExecuting || isSubmitting} size="sm" className="bg-success text-success-foreground hover:bg-success/90 h-8">
+            {isExecuting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />} 
             Chạy code
           </Button>
-          
-          <Button 
-            onClick={handleSubmitCode}
-            disabled={isExecuting || isSubmitting || !userEmail}
-            title={!userEmail ? "Cần đăng nhập để nộp bài" : ""}
-            size="sm" className="bg-gradient-primary text-primary-foreground hover:opacity-90 h-8 disabled:opacity-50"
-          >
-            {isSubmitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
+          <Button onClick={handleSubmitCode} disabled={isExecuting || isSubmitting || !userEmail} size="sm" className="bg-gradient-primary text-primary-foreground hover:opacity-90 h-8">
+            {isSubmitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />} 
             Nộp bài
           </Button>
         </div>
       </div>
 
+      {/* Main workspace */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-[30%] min-w-[300px] border-r border-editor-line flex flex-col">
+        
+        {/* 💡 CỘT TRÁI ĐÃ THÊM TÍNH NĂNG PHÓNG TO (MỞ RỘNG CHIỀU NGANG LÊN 45%) */}
+        <div className={`${isChatExpanded ? "w-[45%]" : "w-[30%]"} min-w-[300px] border-r border-editor-line flex flex-col transition-all duration-300 ease-in-out`}>
           
-          {/* 💡 CHỈ HIỂN THỊ ĐỀ BÀI KHI CHAT CHƯA ĐƯỢC MỞ RỘNG */}
+          {/* Lesson content */}
           {!isChatExpanded && (
             <div className={`${showChat ? "flex-1" : "flex-[2]"} overflow-auto p-5 border-b border-editor-line`}>
-              <div className="flex items-center gap-2 text-primary mb-4">
-                <BookOpen className="h-5 w-5" />
-                <h2 className="font-semibold text-editor-foreground">Đề bài</h2>
+              <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <BookOpen className="h-5 w-5" />
+                    <h2 className="font-semibold text-editor-foreground">Yêu cầu đề bài</h2>
+                  </div>
+                  {!showChat && (
+                      <button onClick={() => setShowChat(true)} className="text-xs flex items-center gap-1 text-primary hover:underline">
+                          <MessageSquare className="h-3.5 w-3.5" /> Mở Chat
+                      </button>
+                  )}
               </div>
+              
               <div className="space-y-4 text-sm text-editor-foreground/80 leading-relaxed">
                 {isLoading ? (
-                  <div className="animate-pulse space-y-3">
-                    <div className="h-4 bg-editor-line rounded w-3/4"></div>
-                  </div>
+                    <div className="animate-pulse space-y-3">
+                      <div className="h-4 bg-editor-line rounded w-3/4"></div>
+                      <div className="h-4 bg-editor-line rounded w-full"></div>
+                    </div>
                 ) : exercise ? (
-                  <div className="prose prose-invert max-w-none">
-                    <p className="whitespace-pre-wrap">{exercise.description}</p>
-                  </div>
+                    <div className="prose prose-sm prose-invert max-w-none text-editor-foreground/80 font-sans">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                            {exercise.description}
+                        </ReactMarkdown>
+                    </div>
                 ) : (
-                  <p className="text-destructive">Không tìm thấy dữ liệu bài tập.</p>
+                    <p className="text-destructive">Lỗi: Không tải được đề bài.</p>
                 )}
               </div>
             </div>
           )}
 
+          {/* Chat Area */}
           {showChat && (
-            <div className="flex-1 flex flex-col min-h-[250px] transition-all">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-editor-line bg-editor-line/30">
+            <div className="flex-1 flex flex-col min-h-[250px]">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-editor-line bg-editor-line/10">
                 <div className="flex items-center gap-2 text-sm font-medium text-editor-foreground">
                   <MessageSquare className="h-4 w-4 text-primary" /> Chat với AI
                 </div>
-                {/* 💡 NÚT MỞ RỘNG / THU NHỎ CHAT */}
-                <button 
-                  onClick={() => setIsChatExpanded(!isChatExpanded)}
-                  className="p-1.5 rounded hover:bg-editor-line text-editor-foreground/60 hover:text-primary transition-colors"
-                  title={isChatExpanded ? "Thu nhỏ (Hiện lại đề bài)" : "Mở rộng Chat"}
-                >
-                  {isChatExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                </button>
+                
+                <div className="flex items-center gap-1">
+                  {/* 💡 NÚT PHÓNG TO / THU NHỎ CHIỀU NGANG */}
+                  <button 
+                    onClick={() => setIsChatExpanded(!isChatExpanded)}
+                    className="p-1.5 rounded hover:bg-editor-line text-editor-foreground/50 hover:text-primary transition-colors"
+                    title={isChatExpanded ? "Thu nhỏ về bình thường" : "Phóng to cửa sổ Chat"}
+                  >
+                    {isChatExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                  </button>
+                  <button 
+                    onClick={() => { setShowChat(false); setIsChatExpanded(false); }} 
+                    className="p-1.5 rounded hover:bg-editor-line text-editor-foreground/50 hover:text-destructive transition-colors"
+                    title="Đóng Chat"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
+              
               <div className="flex-1 overflow-auto p-4 space-y-3">
                 {chatMessages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                      msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-editor-line text-editor-foreground"
+                    <div className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-editor-line text-editor-foreground"
                     }`}>
-                      {msg.role === "assistant" ? <ReactMarkdown>{msg.content || "..."}</ReactMarkdown> : msg.content}
+                      {msg.role === "assistant" ? (
+                          <div className="prose prose-sm prose-invert max-w-none">
+                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                                 {msg.content || "..."}
+                             </ReactMarkdown>
+                          </div>
+                      ) : (
+                          msg.content
+                      )}
                     </div>
                   </div>
                 ))}
                 {isChatLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-editor-line text-editor-foreground rounded-lg px-3 py-2 text-sm flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" /> Đang gửi yêu cầu...
-                    </div>
-                  </div>
+                   <div className="flex justify-start">
+                     <div className="bg-editor-line text-editor-foreground rounded-lg px-3 py-2 text-sm flex items-center gap-2">
+                       <Loader2 className="h-4 w-4 animate-spin text-primary" /> Đang soạn câu trả lời...
+                     </div>
+                   </div>
                 )}
               </div>
               <div className="p-3 border-t border-editor-line">
-                <div className="flex gap-2">
+                <div className="flex gap-2 relative">
                   <input
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder={cooldown > 0 ? `Đợi ${cooldown}s để hỏi tiếp...` : "Hỏi AI về đoạn code..."}
+                    placeholder={cooldown > 0 ? `Đợi ${cooldown}s...` : "Hỏi AI về bài tập..."}
                     disabled={cooldown > 0}
-                    className="flex-1 rounded-lg bg-editor-line px-3 py-2 text-sm text-editor-foreground placeholder:text-editor-foreground/30 outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                    className="flex-1 rounded-lg bg-editor-line px-3 py-2.5 text-sm text-editor-foreground placeholder:text-editor-foreground/30 outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
                   />
-                  <Button 
-                    onClick={handleSendMessage} 
-                    disabled={isChatLoading || cooldown > 0} 
-                    size="sm" 
-                    className="bg-gradient-primary text-primary-foreground h-9 w-9 p-0 disabled:opacity-50"
-                  >
-                    {cooldown > 0 ? (
-                      <span className="text-xs font-semibold">{cooldown}s</span>
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
+                  <Button onClick={handleSendMessage} disabled={isChatLoading || cooldown > 0} size="sm" className="bg-gradient-primary text-primary-foreground h-10 w-10 p-0 disabled:opacity-50">
+                     {cooldown > 0 ? <span className="text-xs font-bold">{cooldown}s</span> : <Send className="h-4 w-4" />}
                   </Button>
                 </div>
               </div>
@@ -511,23 +596,34 @@ const Workspace = () => {
           )}
         </div>
 
-        <div className="flex-1 flex flex-col bg-[#1e1e1e]">
+        {/* Center: Code Editor */}
+        <div className="flex-1 flex flex-col">
           <Editor
             height="100%"
             language={language === "cpp" ? "cpp" : language}
             theme="vs-dark"
             value={code}
-            onChange={(v: string | undefined) => setCode(v || "")}
-            options={{ fontSize: 14, minimap: { enabled: false } }}
+            onChange={(v) => setCode(v || "")}
+            options={{
+              fontSize: 14,
+              fontFamily: "'JetBrains Mono', monospace",
+              minimap: { enabled: false },
+              padding: { top: 16 },
+              lineHeight: 24,
+              renderLineHighlight: "gutter",
+              scrollBeyondLastLine: false,
+              smoothScrolling: true,
+            }}
           />
         </div>
 
+        {/* Right: Output, Grading + AI Feedback */}
         <div className="w-[30%] min-w-[300px] border-l border-editor-line flex flex-col">
           <div className="flex border-b border-editor-line">
             <button
               onClick={() => setActiveTab("output")}
               className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "output" ? "text-primary border-b-2 border-primary" : "text-editor-foreground/40"
+                activeTab === "output" ? "text-primary border-b-2 border-primary" : "text-editor-foreground/40 hover:text-editor-foreground/60"
               }`}
             >
               <TerminalIcon className="h-4 w-4" /> Output
@@ -535,7 +631,7 @@ const Workspace = () => {
             <button
               onClick={() => setActiveTab("grading")}
               className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "grading" ? "text-success border-b-2 border-success" : "text-editor-foreground/40"
+                activeTab === "grading" ? "text-success border-b-2 border-success" : "text-editor-foreground/40 hover:text-editor-foreground/60"
               }`}
             >
               <ListChecks className="h-4 w-4" /> Chấm điểm
@@ -543,7 +639,7 @@ const Workspace = () => {
             <button
               onClick={() => setActiveTab("ai")}
               className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "ai" ? "text-primary border-b-2 border-primary" : "text-editor-foreground/40"
+                activeTab === "ai" ? "text-primary border-b-2 border-primary" : "text-editor-foreground/40 hover:text-editor-foreground/60"
               }`}
             >
               <BrainCircuit className="h-4 w-4" /> AI Feedback
@@ -562,78 +658,63 @@ const Workspace = () => {
                   <textarea 
                     value={customInput}
                     onChange={(e) => setCustomInput(e.target.value)}
-                    placeholder="Nhập dữ liệu vào đây nếu code của bạn dùng hàm input()...."
-                    className="w-full h-24 bg-background border border-editor-line rounded-md p-2 text-sm font-mono text-editor-foreground focus:outline-none focus:border-primary/50 resize-none"
+                    placeholder="Dùng khi code có hàm input()..."
+                    className="w-full h-24 bg-editor-line border-none rounded-md p-2 text-sm font-mono text-editor-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none"
                   />
                 </div>
               </>
             )}
-            
+
             {activeTab === "grading" && (
-              <div className="space-y-4">
-                {!submitResult && !isSubmitting && (
-                  <p className="text-sm text-editor-foreground/60 text-center mt-10">Bấm nút "Nộp bài" để hệ thống chấm điểm code của bạn.</p>
-                )}
-                
-                {isSubmitting && (
-                  <div className="flex flex-col items-center justify-center space-y-3 mt-10">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-sm text-editor-foreground/80">Hệ thống đang chạy Test Case...</p>
-                  </div>
-                )}
-
-                {submitResult && submitResult.message && (
-                  <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                    {submitResult.message}
-                  </div>
-                )}
-
-                {submitResult && !submitResult.message && (
-                  <>
-                    <div className={`p-4 rounded-lg border ${submitResult.status === 'Accepted' ? 'bg-success/10 border-success/20' : 'bg-destructive/10 border-destructive/20'}`}>
-                      <h3 className={`text-lg font-bold ${submitResult.status === 'Accepted' ? 'text-success' : 'text-destructive'}`}>
-                        {submitResult.status === 'Accepted' ? 'Hoàn thành xuất sắc!' : 'Sai kết quả'}
-                      </h3>
-                      <p className="text-sm text-editor-foreground/80 mt-1">
-                        Vượt qua: <span className="font-bold">{submitResult.passedTests}/{submitResult.totalTests}</span> Test Cases
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      {submitResult.results.map((tc) => (
-                        <div key={tc.id} className="p-3 rounded-md border border-editor-line bg-editor/50">
-                          <div className="flex items-center gap-2 mb-2">
-                            {tc.passed ? (
-                              <CheckCircle2 className="h-4 w-4 text-success" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-destructive" />
-                            )}
-                            <span className="text-sm font-semibold text-editor-foreground">Test Case {tc.id}</span>
-                          </div>
-                          
-                          {!tc.passed && (
-                            <div className="text-xs space-y-1.5 mt-2 bg-background p-2 rounded border border-editor-line font-mono">
-                              <div className="text-editor-foreground/60">Đầu vào (Input):</div>
-                              <div className="text-editor-foreground">{tc.input || "Không có"}</div>
-                              
-                              <div className="text-editor-foreground/60 mt-2">Kết quả mong đợi:</div>
-                              <div className="text-success">{tc.expectedOutput}</div>
-                              
-                              <div className="text-editor-foreground/60 mt-2">Code của bạn in ra:</div>
-                              <div className="text-destructive whitespace-pre-wrap">{tc.actualOutput || "Không in ra gì cả"}</div>
-                            </div>
-                          )}
+               <div className="space-y-4">
+                  {!submitResult && !isSubmitting && (
+                    <p className="text-sm text-editor-foreground/60 text-center mt-10">Nhấn nút Nộp bài để xem điểm.</p>
+                  )}
+                  {isSubmitting && (
+                     <div className="flex flex-col items-center mt-10 space-y-3">
+                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                         <span className="text-sm">Đang chạy Test Case...</span>
+                     </div>
+                  )}
+                  {submitResult && submitResult.message && (
+                     <p className="text-sm text-destructive bg-destructive/10 p-3 rounded">{submitResult.message}</p>
+                  )}
+                  {submitResult && !submitResult.message && (
+                     <>
+                        <div className={`p-4 rounded border ${submitResult.status === 'Accepted' ? 'bg-success/10 border-success/30 text-success' : 'bg-destructive/10 border-destructive/30 text-destructive'}`}>
+                            <h3 className="font-bold">{submitResult.status === 'Accepted' ? 'Thành công!' : 'Sai kết quả'}</h3>
+                            <p className="text-sm opacity-90 mt-1">Vượt qua: {submitResult.passedTests}/{submitResult.totalTests} Tests</p>
                         </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+                        <div className="space-y-2 mt-4">
+                            {submitResult.results.map(tc => (
+                                <div key={tc.id} className="p-3 bg-editor-line rounded text-sm">
+                                    <div className="flex items-center gap-2 font-bold">
+                                        {tc.passed ? <CheckCircle2 className="h-4 w-4 text-success"/> : <XCircle className="h-4 w-4 text-destructive"/>}
+                                        Test Case {tc.id}
+                                    </div>
+                                    {!tc.passed && (
+                                        <div className="mt-2 text-xs font-mono bg-editor p-2 rounded">
+                                            <p className="opacity-50">Input:</p>
+                                            <p className="mb-2">{tc.input}</p>
+                                            <p className="text-success opacity-80">Expected:</p>
+                                            <p className="mb-2 text-success">{tc.expectedOutput}</p>
+                                            <p className="text-destructive opacity-80">Your Output:</p>
+                                            <p className="text-destructive">{tc.actualOutput}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                     </>
+                  )}
+               </div>
             )}
 
             {activeTab === "ai" && (
-              <div className="text-sm text-editor-foreground/80 prose prose-invert max-w-none">
-                <ReactMarkdown>{aiFeedback}</ReactMarkdown>
+              <div className="space-y-4 text-sm prose prose-sm prose-invert max-w-none text-editor-foreground/80">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                    {aiFeedback}
+                </ReactMarkdown>
               </div>
             )}
           </div>
