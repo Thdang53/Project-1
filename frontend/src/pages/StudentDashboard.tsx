@@ -16,7 +16,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-// 💡 IMPORT DIALOG CHO POPUP TẠO BÀI TẬP AI
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 const MOCK_API_URL = "http://localhost:5043";
@@ -61,9 +60,6 @@ const StudentDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [completedExercises, setCompletedExercises] = useState<number[]>([]);
 
-  // ==========================================
-  // 💡 CÁC STATE CHO POPUP TẠO BÀI TẬP AI
-  // ==========================================
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState("");
@@ -124,9 +120,6 @@ const StudentDashboard = () => {
     fetchData();
   }, [user?.email]);
 
-  // ==========================================
-  // 💡 HÀM GỌI API ĐỂ AI TỰ TẠO BÀI TẬP MỚI
-  // ==========================================
   const handleGenerateAIExercise = async () => {
     if (!genTopic.trim()) {
       setGenError("Vui lòng nhập chủ đề bài tập bạn muốn luyện tập!");
@@ -155,7 +148,6 @@ const StudentDashboard = () => {
       if (response.ok && data.success) {
         setIsAiModalOpen(false);
 
-        // 💡 BẢN ĐỒ NGÔN NGỮ ĐỂ WORKSPACE HIỂU ĐƯỢC
         const langMap: Record<string, string> = {
           "C++": "cpp",
           "Python": "python",
@@ -164,12 +156,22 @@ const StudentDashboard = () => {
         };
         const targetLanguage = langMap[genLanguage] || "python";
 
-        // 💡 TRUYỀN THÊM CẢ pastLanguage ĐỂ ĐỒNG BỘ Ô SELECT
-        navigate(`/workspace/${data.exerciseId}`, { 
+        const generatedExercise = {
+            id: data.exerciseId,
+            title: data.data.Title || data.data.title,
+            description: data.data.Description || data.data.description,
+            difficulty: data.data.Difficulty || data.data.difficulty,
+            testCases: JSON.stringify(data.data.TestCases || data.data.testCases || []),
+            starterCode: data.data.StarterCode || data.data.starterCode || ""
+        };
+
+        navigate(`/ai-lesson/${data.exerciseId}`, { 
           state: { 
-            isAIGenerated: true,
-            exerciseData: data.data,
-            pastLanguage: targetLanguage
+            exercise: generatedExercise,   
+            isAIGenerated: true,           
+            exerciseData: data.data,       
+            pastLanguage: targetLanguage,
+            popupLanguage: genLanguage     
           } 
         });
       } else {
@@ -203,6 +205,15 @@ const StudentDashboard = () => {
     return ex ? ex.title : `Bài tập #${id}`;
   };
 
+  // 💡 HÀM ĐỌC TÊN KHÓA HỌC ĐỂ DỊCH SANG NGÔN NGỮ
+  const getLanguageInfoFromCourse = (courseTitle: string) => {
+    const title = courseTitle.toLowerCase();
+    if (title.includes("c++") || title.includes("cpp")) return { workspaceLang: "cpp", displayLang: "C++" };
+    if (title.includes("javascript") || title.includes("js")) return { workspaceLang: "javascript", displayLang: "JavaScript" };
+    if (title.includes("java")) return { workspaceLang: "java", displayLang: "Java" };
+    return { workspaceLang: "python", displayLang: "Python" };
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans">
       <Navbar variant="default" />
@@ -222,7 +233,6 @@ const StudentDashboard = () => {
                   {completedExercises.length * 10} Điểm kinh nghiệm
               </div>
 
-              {/* 💡 NÚT GỌI POPUP AI TẠI ĐÂY */}
               <Button 
                 onClick={() => setIsAiModalOpen(true)}
                 className="rounded-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-glow px-5 py-2.5 h-auto font-bold"
@@ -243,7 +253,6 @@ const StudentDashboard = () => {
             </TabsTrigger>
           </TabsList>
 
-          {/* TAB BÀI TẬP */}
           <TabsContent value="exercises" className="focus:outline-none">
             {isLoading ? (
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -254,7 +263,6 @@ const StudentDashboard = () => {
             ) : courses.length > 0 ? (
               <Tabs defaultValue={courses[0].id.toString()} className="w-full">
                 
-                {/* Thanh chọn Khóa học */}
                 <div className="overflow-x-auto pb-2 mb-6 scrollbar-hide">
                   <TabsList className="flex w-max h-auto gap-2 bg-transparent p-0">
                     {courses.map(course => (
@@ -270,11 +278,13 @@ const StudentDashboard = () => {
                   </TabsList>
                 </div>
 
-                {/* Nội dung từng Khóa học */}
                 {courses.map(course => {
                   const courseLessons = lessons
                     .filter(l => l.courseId === course.id)
                     .sort((a, b) => a.orderNum - b.orderNum);
+                  
+                  // Dịch tên khóa học hiện tại sang chuẩn ngôn ngữ lập trình
+                  const langInfo = getLanguageInfoFromCourse(course.title);
 
                   return (
                     <TabsContent key={course.id} value={course.id.toString()} className="space-y-10 focus:outline-none animate-in fade-in-50 duration-500">
@@ -332,16 +342,25 @@ const StudentDashboard = () => {
                                       </p>
                                       
                                       <div className="flex items-center gap-2 mt-auto">
+                                        {/* 💡 TRUYỀN NGÔN NGỮ SANG TRANG AI LESSON */}
                                         <button 
-                                          onClick={() => navigate(`/ai-lesson/${ex.id}`, { state: { exercise: ex } })}
+                                          onClick={() => navigate(`/ai-lesson/${ex.id}`, { 
+                                            state: { 
+                                              exercise: ex,
+                                              popupLanguage: langInfo.displayLang
+                                            } 
+                                          })}
                                           className="flex-1 flex items-center justify-center font-bold rounded-xl h-10 text-sm transition-all bg-accent/10 text-accent hover:bg-accent hover:text-white border border-accent/20"
                                           title="Chuẩn bị bài học với AI"
                                         >
                                           <Sparkles className="h-4 w-4 mr-1.5" /> Gợi ý
                                         </button>
 
+                                        {/* 💡 TRUYỀN NGÔN NGỮ SANG TRANG WORKSPACE */}
                                         <button 
-                                          onClick={() => navigate(`/workspace/${ex.id}`)} 
+                                          onClick={() => navigate(`/workspace/${ex.id}`, {
+                                            state: { pastLanguage: langInfo.workspaceLang }
+                                          })} 
                                           className={`flex-[2] flex items-center justify-center font-bold rounded-xl h-10 text-sm transition-all ${
                                             isCompleted 
                                               ? 'bg-success/10 hover:bg-success/20 text-success shadow-none' 
@@ -370,7 +389,6 @@ const StudentDashboard = () => {
             )}
           </TabsContent>
 
-          {/* TAB LỊCH SỬ NỘP BÀI */}
           <TabsContent value="history" className="focus:outline-none">
             <Card className="border-border shadow-card overflow-hidden">
               <CardContent className="p-0 overflow-x-auto">
@@ -432,9 +450,6 @@ const StudentDashboard = () => {
         </Tabs>
       </main>
 
-      {/* ========================================== */}
-      {/* 💡 POPUP (DIALOG) CẤU HÌNH TẠO BÀI TẬP AI */}
-      {/* ========================================== */}
       <Dialog open={isAiModalOpen} onOpenChange={setIsAiModalOpen}>
         <DialogContent className="sm:max-w-[500px] bg-card border-border shadow-elevated">
           <DialogHeader>
@@ -455,7 +470,6 @@ const StudentDashboard = () => {
               </div>
             )}
 
-            {/* Khối chọn Ngôn Ngữ */}
             <div className="space-y-3">
               <label className="text-sm font-bold text-foreground">Ngôn ngữ lập trình</label>
               <div className="flex flex-wrap gap-2">
@@ -476,7 +490,6 @@ const StudentDashboard = () => {
               </div>
             </div>
 
-            {/* Khối chọn Độ Khó */}
             <div className="space-y-3">
               <label className="text-sm font-bold text-foreground">Độ khó mong muốn</label>
               <div className="flex flex-wrap gap-2">
@@ -497,7 +510,6 @@ const StudentDashboard = () => {
               </div>
             </div>
 
-            {/* Khối nhập Chủ Đề */}
             <div className="space-y-3">
               <label className="text-sm font-bold text-foreground">Chủ đề bài tập</label>
               <input 
