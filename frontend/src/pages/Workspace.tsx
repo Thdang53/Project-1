@@ -6,7 +6,7 @@ import {
   Code2, Send, Play, Upload, BrainCircuit, 
   MessageSquare, Terminal as TerminalIcon, 
   BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code, X,
-  Maximize2, Minimize2 // 💡 Import 2 icon phóng to/thu nhỏ
+  Maximize2, Minimize2, Heart // 💡 Import thêm icon Heart
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import { useAuth } from "../hooks/useAuth";
@@ -112,6 +112,10 @@ const Workspace = () => {
   // 💡 STATE ĐỂ QUẢN LÝ VIỆC PHÓNG TO CHAT
   const [isChatExpanded, setIsChatExpanded] = useState(false);
   
+  // 💡 STATE QUẢN LÝ VIỆC LƯU BÀI
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -434,6 +438,39 @@ const Workspace = () => {
     }
   };
 
+  // 💡 HÀM GỌI API LƯU BÀI TẬP VÀO DATABASE
+  const handleSaveExercise = async () => {
+    if (!userEmail || !exercise) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/SavedAI/save`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          userEmail: userEmail,
+          title: exercise.title,
+          description: exercise.description,
+          difficulty: exercise.difficulty || "Cơ bản",
+          language: language,
+          starterCode: exercise.starterCode || "",
+          testCases: exercise.testCases,
+          contentType: "Exercise"
+        })
+      });
+
+      if (response.ok) {
+        setIsSaved(true);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col bg-editor">
       {/* Top bar */}
@@ -456,6 +493,27 @@ const Workspace = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          
+          {/* 💡 NÚT LƯU BÀI TẬP (Chỉ hiện khi là bài AI sinh ra) */}
+          {isAIGenerated && userEmail && (
+            <Button 
+              onClick={handleSaveExercise} 
+              disabled={isSaving || isSaved}
+              size="sm" 
+              variant="ghost" 
+              className={`text-editor-foreground/60 hover:text-primary transition-all ${
+                isSaved ? 'text-primary bg-primary/10 opacity-70 cursor-not-allowed' : ''
+              }`}
+            >
+              {isSaving ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <Heart className={`mr-1.5 h-4 w-4 ${isSaved ? 'fill-primary' : ''}`} />
+              )}
+              {isSaved ? "Đã lưu" : "Lưu bài tập"}
+            </Button>
+          )}
+
           <select 
             value={language} 
             onChange={(e) => handleLanguageChange(e.target.value)}
@@ -485,7 +543,7 @@ const Workspace = () => {
       {/* Main workspace */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* 💡 CỘT TRÁI ĐÃ THÊM TÍNH NĂNG PHÓNG TO (MỞ RỘNG CHIỀU NGANG LÊN 45%) */}
+        {/* Left: Lesson + Chat */}
         <div className={`${isChatExpanded ? "w-[45%]" : "w-[30%]"} min-w-[300px] border-r border-editor-line flex flex-col transition-all duration-300 ease-in-out`}>
           
           {/* Lesson content */}
@@ -531,7 +589,6 @@ const Workspace = () => {
                 </div>
                 
                 <div className="flex items-center gap-1">
-                  {/* 💡 NÚT PHÓNG TO / THU NHỎ CHIỀU NGANG */}
                   <button 
                     onClick={() => setIsChatExpanded(!isChatExpanded)}
                     className="p-1.5 rounded hover:bg-editor-line text-editor-foreground/50 hover:text-primary transition-colors"

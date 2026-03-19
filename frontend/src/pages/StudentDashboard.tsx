@@ -4,7 +4,8 @@ import {
   BookOpen, Clock, Trophy, 
   CheckCircle2, History, Terminal,
   Layers, ChevronRight, FolderOpen,
-  Sparkles, Wand2, Loader2, AlertCircle
+  Sparkles, Wand2, Loader2, AlertCircle,
+  BookHeart, Code2, Trash2 // 💡 Bổ sung import icon Trash2 (Thùng rác)
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import Navbar from "@/components/Navbar";
@@ -57,6 +58,9 @@ const StudentDashboard = () => {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   
+  // 💡 STATE CHỨA DỮ LIỆU THƯ VIỆN AI
+  const [savedItems, setSavedItems] = useState<any[]>([]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [completedExercises, setCompletedExercises] = useState<number[]>([]);
 
@@ -95,6 +99,9 @@ const StudentDashboard = () => {
           fetchPromises.push(
             fetch(`${API_BASE_URL}/api/CodeExecution/submissions/${user.email}`).then(res => res.json())
           );
+          fetchPromises.push(
+            fetch(`${API_BASE_URL}/api/SavedAI/user/${user.email}`).then(res => res.json())
+          );
         }
 
         const results = await Promise.all(fetchPromises);
@@ -103,12 +110,18 @@ const StudentDashboard = () => {
         setLessons(results[1]);
         setExercises(results[2]);
 
-        if (user?.email && Array.isArray(results[3])) {
-          setSubmissions(results[3]);
-          const completedIds = results[3]
-            .filter((sub: any) => sub.status === "Accepted")
-            .map((sub: any) => sub.exerciseId);
-          setCompletedExercises([...new Set(completedIds)]);
+        if (user?.email) {
+          if (Array.isArray(results[3])) {
+            setSubmissions(results[3]);
+            const completedIds = results[3]
+              .filter((sub: any) => sub.status === "Accepted")
+              .map((sub: any) => sub.exerciseId);
+            setCompletedExercises([...new Set(completedIds)]);
+          }
+
+          if (Array.isArray(results[4])) {
+            setSavedItems(results[4]);
+          }
         }
       } catch (error) {
         console.error("Lỗi tải dữ liệu:", error);
@@ -185,6 +198,32 @@ const StudentDashboard = () => {
     }
   };
 
+  // 💡 HÀM XỬ LÝ XÓA BÀI KHỎI THƯ VIỆN
+  const handleDeleteSavedItem = async (id: number) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa bài này khỏi thư viện không?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/SavedAI/${id}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        // Cập nhật lại UI ngay lập tức bằng cách lọc bỏ bài vừa xóa
+        setSavedItems(prevItems => prevItems.filter(item => item.id !== id));
+      } else {
+        alert("Có lỗi xảy ra khi xóa. Vui lòng thử lại.");
+      }
+    } catch (error) {
+      console.error("Lỗi khi xóa:", error);
+      alert("Lỗi kết nối máy chủ.");
+    }
+  };
+
   const getDifficultyColor = (diff: string) => {
     switch (diff?.toLowerCase()) {
       case 'easy': return 'bg-success/10 text-success border-success/20';
@@ -205,7 +244,6 @@ const StudentDashboard = () => {
     return ex ? ex.title : `Bài tập #${id}`;
   };
 
-  // 💡 HÀM ĐỌC TÊN KHÓA HỌC ĐỂ DỊCH SANG NGÔN NGỮ
   const getLanguageInfoFromCourse = (courseTitle: string) => {
     const title = courseTitle.toLowerCase();
     if (title.includes("c++") || title.includes("cpp")) return { workspaceLang: "cpp", displayLang: "C++" };
@@ -238,7 +276,8 @@ const StudentDashboard = () => {
                 className="rounded-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-glow px-5 py-2.5 h-auto font-bold"
               >
                 <Wand2 className="h-4 w-4 mr-2" />
-                Nhờ AI Tạo Bài Tập
+                {/* 💡 Đã đổi tên nút theo yêu cầu */}
+                AI tạo bài tập
               </Button>
             </div>
         </div>
@@ -250,6 +289,9 @@ const StudentDashboard = () => {
             </TabsTrigger>
             <TabsTrigger value="history" className="gap-2">
               <History className="h-4 w-4" /> Lịch sử nộp bài
+            </TabsTrigger>
+            <TabsTrigger value="library" className="gap-2 text-pink-500 data-[state=active]:text-pink-600">
+              <BookHeart className="h-4 w-4" /> Thư viện AI
             </TabsTrigger>
           </TabsList>
 
@@ -283,7 +325,6 @@ const StudentDashboard = () => {
                     .filter(l => l.courseId === course.id)
                     .sort((a, b) => a.orderNum - b.orderNum);
                   
-                  // Dịch tên khóa học hiện tại sang chuẩn ngôn ngữ lập trình
                   const langInfo = getLanguageInfoFromCourse(course.title);
 
                   return (
@@ -342,7 +383,6 @@ const StudentDashboard = () => {
                                       </p>
                                       
                                       <div className="flex items-center gap-2 mt-auto">
-                                        {/* 💡 TRUYỀN NGÔN NGỮ SANG TRANG AI LESSON */}
                                         <button 
                                           onClick={() => navigate(`/ai-lesson/${ex.id}`, { 
                                             state: { 
@@ -356,7 +396,6 @@ const StudentDashboard = () => {
                                           <Sparkles className="h-4 w-4 mr-1.5" /> Gợi ý
                                         </button>
 
-                                        {/* 💡 TRUYỀN NGÔN NGỮ SANG TRANG WORKSPACE */}
                                         <button 
                                           onClick={() => navigate(`/workspace/${ex.id}`, {
                                             state: { pastLanguage: langInfo.workspaceLang }
@@ -446,6 +485,59 @@ const StudentDashboard = () => {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* 💡 TAB THƯ VIỆN AI VỚI NÚT XÓA */}
+          <TabsContent value="library" className="focus:outline-none animate-in fade-in-50 duration-500">
+             {savedItems.length === 0 ? (
+                <div className="bg-card rounded-3xl border-2 border-dashed border-border py-20 text-center shadow-sm">
+                   <BookHeart className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-30" />
+                   <h3 className="text-lg font-bold text-foreground mb-2">Thư viện của bạn đang trống!</h3>
+                   <p className="text-muted-foreground font-medium mb-6">Hãy nhờ AI tạo bài tập hoặc bài giảng và bấm "Lưu" để lưu trữ tại đây nhé.</p>
+                   <Button onClick={() => setIsAiModalOpen(true)} variant="outline" className="border-primary/50 text-primary">
+                     <Wand2 className="mr-2 h-4 w-4"/> Bắt đầu tạo bài
+                   </Button>
+                </div>
+             ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                   {savedItems.map((item, index) => (
+                      <div key={index} className="group p-5 rounded-2xl bg-card border border-border shadow-card hover:shadow-elevated hover:-translate-y-1 transition-all duration-300 flex flex-col h-full">
+                         <div className="flex justify-between items-start mb-3">
+                            <Badge variant="outline" className="text-[10px] uppercase font-mono tracking-wider border-pink-500/30 text-pink-500 bg-pink-500/10">
+                               {item.contentType === "Lesson" ? "Bài giảng AI" : "Bài tập AI"}
+                            </Badge>
+                            {/* 💡 NÚT XÓA Ở ĐÂY */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">{new Date(item.savedAt).toLocaleDateString('vi-VN')}</span>
+                              <button 
+                                onClick={() => handleDeleteSavedItem(item.id)} 
+                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                title="Xóa khỏi thư viện"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                         </div>
+                         <h3 className="text-lg font-bold mb-2 text-card-foreground group-hover:text-primary transition-colors line-clamp-2">{item.title}</h3>
+                         <div className="flex items-center gap-2 mb-4 text-xs font-mono text-muted-foreground">
+                            <Terminal className="h-3.5 w-3.5" /> {item.language || "N/A"}
+                            <span className="px-1.5 py-0.5 rounded bg-muted">Độ khó: {item.difficulty || "Cơ bản"}</span>
+                         </div>
+                         <div className="mt-auto">
+                            {item.contentType === "Lesson" ? (
+                               <Button onClick={() => navigate(`/ai-lesson/saved-${item.id}`, { state: { exercise: item, popupLanguage: item.language, savedLessonContent: item.starterCode } })} className="w-full bg-accent/10 text-accent hover:bg-accent hover:text-white border border-accent/20">
+                                  <BookOpen className="mr-2 h-4 w-4" /> Ôn tập lại
+                               </Button>
+                            ) : (
+                               <Button onClick={() => navigate(`/workspace/saved-${item.id}`, { state: { isAIGenerated: true, pastLanguage: item.language, exerciseData: { ...item, testCases: JSON.parse(item.testCases || "[]") } } })} className="w-full bg-muted hover:bg-primary hover:text-primary-foreground text-foreground">
+                                  <Code2 className="mr-2 h-4 w-4" /> Giải bài này
+                               </Button>
+                            )}
+                         </div>
+                      </div>
+                   ))}
+                </div>
+             )}
           </TabsContent>
         </Tabs>
       </main>

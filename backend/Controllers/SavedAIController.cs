@@ -115,5 +115,38 @@ namespace backend.Controllers
                 return StatusCode(500, new { success = false, message = "Lỗi Database: " + ex.Message });
             }
         }
+
+        // 💡 3. API: Xóa bài khỏi Thư viện (Tính năng mới)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteSavedContent(int id)
+        {
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    await conn.OpenAsync();
+                    string query = "DELETE FROM SavedAIContents WHERE Id = @Id";
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@Id", id);
+                        int rowsAffected = await cmd.ExecuteNonQueryAsync();
+
+                        if (rowsAffected > 0)
+                        {
+                            return Ok(new { success = true, message = "Đã xóa thành công khỏi thư viện." });
+                        }
+                        else
+                        {
+                            return NotFound(new { success = false, message = "Không tìm thấy dữ liệu để xóa." });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi Database: " + ex.Message });
+            }
+        }
     }
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
-import { ArrowLeft, Sparkles, Play, Loader2, BookOpen, Code2, AlertCircle, Terminal, Target } from "lucide-react";
+import { ArrowLeft, Sparkles, Play, Loader2, BookOpen, Code2, AlertCircle, Terminal, Target, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,7 +33,6 @@ const LoadingState = ({ language }: { language: string }) => (
   </div>
 );
 
-// 💡 TÁCH BỘ VẼ MARKDOWN RA ĐỂ DÙNG CHUNG CHO CẢ ĐỀ BÀI VÀ HƯỚNG DẪN
 const MarkdownComponents = {
   code({node, inline, className, children, ...props}: any) {
     const match = /language-(\w+)/.exec(className || '');
@@ -70,13 +69,16 @@ const AILesson = () => {
   const { lessonId } = useParams(); 
   const navigate = useNavigate();
   const location = useLocation();
-  const { token } = useAuth();
+  const { user, token } = useAuth();
+  const userEmail = user?.email || "";
   
   const exercise = location.state?.exercise;
-  
   const isAIGenerated = location.state?.isAIGenerated;
   const aiExerciseData = location.state?.exerciseData;
   const popupLanguage = location.state?.popupLanguage;
+  
+  // 💡 LẤY NỘI DUNG BÀI GIẢNG ĐÃ LƯU TỪ DASHBOARD (NẾU CÓ)
+  const savedLessonContent = location.state?.savedLessonContent;
 
   const hasFetchedRef = useRef(false);
 
@@ -88,9 +90,13 @@ const AILesson = () => {
     return SUPPORTED_LANGUAGES.includes(savedLang || "") ? savedLang! : "C++";
   });
 
-  const [aiContent, setAiContent] = useState<string>("");
-  const [loading, setLoading] = useState(true);
+  // 💡 NẾU LÀ BÀI ĐÃ LƯU THỊ HIỆN NGAY, KHÔNG CẦN CHỜ LOAD
+  const [aiContent, setAiContent] = useState<string>(savedLessonContent || "");
+  const [loading, setLoading] = useState(!savedLessonContent);
   const [error, setError] = useState<string | null>(null);
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
   const getApiUrl = () => {
     try {
@@ -141,8 +147,11 @@ const AILesson = () => {
     }
 
     if (!hasFetchedRef.current) {
-      fetchAI(selectedLanguage);
       hasFetchedRef.current = true;
+      // 💡 CHỈ GỌI AI KHI CHƯA CÓ DỮ LIỆU LƯU SẴN
+      if (!savedLessonContent) {
+          fetchAI(selectedLanguage);
+      }
     }
   }, [exercise]);
 
@@ -151,7 +160,42 @@ const AILesson = () => {
     
     setSelectedLanguage(lang);
     localStorage.setItem("preferred_language", lang);
-    fetchAI(lang);
+    setIsSaved(false); 
+    fetchAI(lang); // Đổi ngôn ngữ thì bắt buộc phải nhờ AI viết lại
+  };
+
+  const handleSaveLesson = async () => {
+    if (!userEmail || !exercise) return;
+    
+    setIsSaving(true);
+    try {
+      const API_BASE_URL = getApiUrl();
+      const response = await fetch(`${API_BASE_URL}/api/SavedAI/save`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          userEmail: userEmail,
+          title: exercise.title,
+          description: exercise.description,
+          difficulty: exercise.difficulty || "Cơ bản",
+          language: selectedLanguage,
+          starterCode: aiContent, // 💡 BÍ QUYẾT ĐÂY: Lưu nguyên cái đoạn văn AI giảng vào đây!
+          testCases: "[]",
+          contentType: "Lesson" 
+        })
+      });
+
+      if (response.ok) {
+        setIsSaved(true);
+      }
+    } catch (e) {
+      console.error("Lỗi khi lưu bài giảng:", e);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -168,15 +212,36 @@ const AILesson = () => {
       </nav>
 
       <div className="container mx-auto max-w-4xl px-4 py-8 flex-1">
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          onClick={() => navigate('/student-dashboard')}
-          className="mb-6 text-muted-foreground hover:text-foreground hover:bg-muted"
-        >
-          <ArrowLeft className="mr-1.5 h-4 w-4" />
-          Quay lại Dashboard
-        </Button>
+        <div className="flex justify-between items-start mb-6">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => navigate('/student-dashboard')}
+            className="text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            <ArrowLeft className="mr-1.5 h-4 w-4" />
+            Quay lại Dashboard
+          </Button>
+
+          {/* 💡 ẨN NÚT LƯU NẾU ĐÂY ĐÃ LÀ BÀI MỞ LÊN TỪ THƯ VIỆN */}
+          {!loading && !error && userEmail && !savedLessonContent && (
+             <Button 
+               onClick={handleSaveLesson} 
+               disabled={isSaving || isSaved}
+               variant="outline"
+               className={`border-primary/30 text-primary hover:bg-primary/10 transition-all ${
+                 isSaved ? 'opacity-70 cursor-not-allowed bg-primary/10 border-primary/50' : ''
+               }`}
+             >
+               {isSaving ? (
+                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+               ) : (
+                 <Heart className={`h-4 w-4 mr-2 ${isSaved ? 'fill-primary' : ''}`} />
+               )}
+               {isSaved ? "Đã lưu vào Thư viện" : "Lưu bài giảng AI"}
+             </Button>
+          )}
+        </div>
 
         {error && !aiContent ? (
           <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-8 text-center mt-10">
@@ -203,7 +268,6 @@ const AILesson = () => {
               </p>
             </div>
 
-            {/* 💡 TÍNH NĂNG MỚI: KHỐI HIỂN THỊ YÊU CẦU ĐỀ BÀI */}
             <Card className="rounded-2xl border-border bg-card shadow-sm mb-8">
               <CardContent className="p-5 sm:p-7">
                 <div className="flex items-center gap-2 text-foreground font-bold mb-4 pb-3 border-b border-border/50">
@@ -221,7 +285,6 @@ const AILesson = () => {
               </CardContent>
             </Card>
 
-            {/* THANH CHỌN NGÔN NGỮ */}
             <div className="flex flex-wrap items-center gap-2 mb-6 p-4 bg-muted/40 rounded-xl border border-border">
               <div className="flex items-center text-sm font-semibold text-muted-foreground mr-2">
                 <Terminal className="h-4 w-4 mr-1.5 text-primary" /> Hướng dẫn giải bằng:
@@ -242,7 +305,6 @@ const AILesson = () => {
               ))}
             </div>
 
-            {/* KHỐI HIỂN THỊ BÀI GIẢNG AI */}
             {loading ? (
               <LoadingState language={selectedLanguage} />
             ) : (
