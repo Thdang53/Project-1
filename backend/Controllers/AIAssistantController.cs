@@ -7,7 +7,9 @@ using System.IO;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System;
-using System.Linq; // 💡 ĐÃ BỔ SUNG LINQ CHO HÀM XOAY VÒNG KEY
+using System.Linq; 
+using backend.Data;    
+using backend.Models;  
 
 namespace backend.Controllers
 {
@@ -17,11 +19,13 @@ namespace backend.Controllers
     {
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
+        private readonly AppDbContext _context; 
 
-        public AIAssistantController(HttpClient httpClient, IConfiguration configuration)
+        public AIAssistantController(HttpClient httpClient, IConfiguration configuration, AppDbContext context)
         {
             _httpClient = httpClient;
             _configuration = configuration;
+            _context = context; 
         }
 
         public class ChatMessage
@@ -70,6 +74,15 @@ namespace backend.Controllers
             public string ExpectedOutput { get; set; } = string.Empty;
         }
 
+        public class ReportFlagRequest
+        {
+            public int ExerciseId { get; set; }
+            public string StudentEmail { get; set; } = string.Empty;
+            public string StudentIssue { get; set; } = string.Empty;
+            public string OriginalAIResponse { get; set; } = string.Empty;
+            public string StudentCode { get; set; } = string.Empty; 
+        }
+
         private string StripHTML(string input)
         {
             if (string.IsNullOrEmpty(input)) return string.Empty;
@@ -78,23 +91,17 @@ namespace backend.Controllers
             return decodedText.Trim();
         }
 
-        // =================================================================
-        // 💡 HÀM BÍ MẬT: TỰ ĐỘNG CHỌN NGẪU NHIÊN 1 API KEY TỪ APPSETTINGS
-        // =================================================================
         private string GetRandomApiKey()
         {
-            // Lấy danh sách Keys từ mảng cấu hình mới
             var keysSection = _configuration.GetSection("GeminiApiKeys").GetChildren();
             var keys = keysSection.Select(x => x.Value).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
 
             if (keys.Count > 0)
             {
-                // Chọn ngẫu nhiên 1 cái để san sẻ tải trọng (Load Balancing)
                 int index = new Random().Next(keys.Count);
                 return keys[index]!.Trim().Replace(" ", "");
             }
 
-            // Phòng hờ lỡ bạn chưa sửa tên biến bên appsettings, nó vẫn đọc biến cũ
             string? singleKey = _configuration["GeminiApiKey"];
             if (!string.IsNullOrWhiteSpace(singleKey))
             {
@@ -106,17 +113,35 @@ namespace backend.Controllers
 
 
         // =================================================================
-        // API 1: PHÂN TÍCH LỖI VÀ CHAT VỚI AI
+        // API 1: PHÂN TÍCH LỖI VÀ CHAT VỚI AI (ĐÃ TÍCH HỢP RAG)
         // =================================================================
         [HttpPost("analyze")]
         public async Task<IActionResult> AnalyzeCode([FromBody] AIRequest request)
         {
-            // 💡 SỬ DỤNG HÀM BỐC THĂM KEY
             string apiKey = GetRandomApiKey();
             if (string.IsNullOrEmpty(apiKey))
             {
                 return StatusCode(500, new { feedback = "Lỗi máy chủ: Chưa cấu hình danh sách Gemini API Keys." });
             }
+
+            // ==============================================================================
+            // 🌟 PHÉP THUẬT RAG Ở ĐÂY: LẤY "BÍ KÍP" TỪ GIẢNG VIÊN TRONG DATABASE
+            // ==============================================================================
+            var lecturerHints = _context.AICorrections
+                .Where(c => c.IsResolved == true && !string.IsNullOrEmpty(c.LecturerHint))
+                .Select(c => c.LecturerHint)
+                .ToList();
+
+            string ragContext = "";
+            if (lecturerHints.Count > 0)
+            {
+                ragContext = "\n\n🚨 [CÁC LƯU Ý TỪ CHUYÊN GIA / GIẢNG VIÊN - BẠN PHẢI TUÂN THỦ TUYỆT ĐỐI]:\n";
+                foreach (var hint in lecturerHints)
+                {
+                    ragContext += $"- {hint}\n";
+                }
+            }
+            // ==============================================================================
 
             string systemInstruction = $@"
 Bạn là 'InnoX AI' - Trợ giảng lập trình tận tâm của hệ thống AI Learning Hub.
@@ -130,6 +155,7 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
 4. Trình bày câu trả lời bằng Markdown ĐẸP MẮT.
 5. Xưng hô là 'Mình' và gọi sinh viên là 'Bạn'. Luôn giữ thái độ thân thiện, khích lệ.
 6. TỪ CHỐI trả lời mọi câu hỏi lạc đề (toán học, đời sống, nấu ăn...) và nhắc sinh viên quay lại việc code.
+{ragContext} 
 ";
 
             string userPrompt = "";
@@ -259,7 +285,6 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
         [HttpPost("prerequisites")]
         public async Task<IActionResult> GetPrerequisites([FromBody] PrerequisiteRequest request)
         {
-            // 💡 SỬ DỤNG HÀM BỐC THĂM KEY
             string apiKey = GetRandomApiKey();
             if (string.IsNullOrEmpty(apiKey))
             {
@@ -322,7 +347,6 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
         [HttpPost("generate-exercise")]
         public async Task<IActionResult> GenerateExercise([FromBody] GenerateExerciseRequest request)
         {
-            // 💡 SỬ DỤNG HÀM BỐC THĂM KEY
             string apiKey = GetRandomApiKey();
             if (string.IsNullOrEmpty(apiKey))
             {
@@ -427,6 +451,111 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
             {
                 return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
             }
+        }
+
+        // =================================================================
+        // API 4: SINH VIÊN BÁO CÁO LỖI AI (CẦN GIẢNG VIÊN HỖ TRỢ)
+        // =================================================================
+        [HttpPost("report-flag")]
+        // [Authorize] // Nhớ mở comment dòng này nếu bạn đã setup JWT Auth đầy đủ
+        public async Task<IActionResult> ReportAIFlag([FromBody] ReportFlagRequest request)
+        {
+            try
+            {
+                var user = _context.Users.FirstOrDefault(u => u.Email == request.StudentEmail);
+                if (user == null) return Unauthorized(new { message = "Không tìm thấy người dùng. Bạn cần đăng nhập." });
+
+                var newCorrection = new AICorrection
+                {
+                    ExerciseId = request.ExerciseId,
+                    StudentId = user.Id, 
+                    StudentIssue = request.StudentIssue,
+                    OriginalAIResponse = request.OriginalAIResponse,
+                    StudentCode = request.StudentCode, 
+                    IsResolved = false, 
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.AICorrections.Add(newCorrection);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { success = true, message = "Hệ thống đã ghi nhận! Giảng viên sẽ sớm xem xét và điều chỉnh." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
+            }
+        }
+
+        // =================================================================
+        // API 5: LẤY DANH SÁCH THÔNG BÁO CỦA SINH VIÊN
+        // =================================================================
+        [HttpGet("my-notifications")]
+        public async Task<IActionResult> GetMyNotifications([FromQuery] string email)
+        {
+            var user = _context.Users.FirstOrDefault(u => u.Email == email);
+            if (user == null) return Unauthorized();
+
+            // Lấy các báo cáo ĐÃ ĐƯỢC GIẢNG VIÊN DUYỆT (IsResolved = true) của sinh viên này
+            var notifications = _context.AICorrections
+                .Where(c => c.StudentId == user.Id && c.IsResolved == true)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new {
+                    c.Id,
+                    c.ExerciseId,
+                    ExerciseTitle = _context.Exercises.Where(e => e.Id == c.ExerciseId).Select(e => e.Title).FirstOrDefault() ?? ("Bài tập #" + c.ExerciseId),
+                    c.IsRead,
+                    c.CreatedAt,
+                    LecturerName = _context.Users.Where(u => u.Id == c.LecturerId).Select(u => u.FullName ?? "Một giảng viên").FirstOrDefault()
+                })
+                .Take(10) // Lấy 10 thông báo gần nhất
+                .ToList();
+
+            return Ok(new { success = true, data = notifications });
+        }
+
+        // =================================================================
+        // API 6: ĐÁNH DẤU ĐÃ ĐỌC THÔNG BÁO
+        // =================================================================
+        [HttpPost("mark-read/{id}")]
+        public async Task<IActionResult> MarkNotificationAsRead(int id)
+        {
+            var correction = await _context.AICorrections.FindAsync(id);
+            if (correction != null && !correction.IsRead)
+            {
+                correction.IsRead = true;
+                await _context.SaveChangesAsync();
+            }
+            return Ok(new { success = true });
+        }
+
+        // =================================================================
+        // API 7: LẤY LỊCH SỬ BÁO CÁO CỦA SINH VIÊN (CHO TAB GÓC THẮC MẮC)
+        // =================================================================
+        [HttpGet("my-reports")]
+        public async Task<IActionResult> GetMyReports([FromQuery] string email)
+        {
+            var user = _context.Users.FirstOrDefault(u => u.Email == email);
+            if (user == null) return Unauthorized();
+
+            var reports = _context.AICorrections
+                .Where(c => c.StudentId == user.Id)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new {
+                    c.Id,
+                    c.ExerciseId,
+                    ExerciseTitle = _context.Exercises.Where(e => e.Id == c.ExerciseId).Select(e => e.Title).FirstOrDefault() ?? ("Bài tập #" + c.ExerciseId),
+                    c.StudentIssue,
+                    c.OriginalAIResponse,
+                    c.IsResolved, // Trạng thái: Đang chờ hay Đã giải quyết
+                    c.LecturerHint, // Bí kíp
+                    c.CreatedAt,
+                    LecturerName = _context.Users.Where(u => u.Id == c.LecturerId).Select(u => u.FullName ?? "Một giảng viên").FirstOrDefault()
+                })
+                .ToList();
+
+            return Ok(new { success = true, data = reports });
         }
     }
 }

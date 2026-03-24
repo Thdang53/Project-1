@@ -7,6 +7,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 // Import các trang
+import LecturerDashboard from "./pages/LecturerDashboard";
 import Index from "./pages/Index";
 import Workspace from "./pages/Workspace";
 import Courses from "./pages/Courses";
@@ -15,7 +16,7 @@ import StudentDashboard from "./pages/StudentDashboard";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
-import AILesson from "./pages/AILesson"; // Thêm import cho trang AILesson
+import AILesson from "./pages/AILesson";
 
 const queryClient = new QueryClient();
 
@@ -76,12 +77,22 @@ const App = () => (
               } 
             />
             
-            {/* Trang quản lý cho Admin/Giảng viên */}
+            {/* Trang quản lý cho Admin */}
             <Route 
               path="/dashboard" 
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* 💡 THÊM MỚI: Trang Không gian làm việc của Giảng viên */}
+            <Route 
+              path="/lecturer-dashboard" 
+              element={
+                <ProtectedRoute>
+                  <LecturerDashboard />
                 </ProtectedRoute>
               } 
             />

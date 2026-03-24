@@ -6,10 +6,11 @@ import {
   Code2, Send, Play, Upload, BrainCircuit, 
   MessageSquare, Terminal as TerminalIcon, 
   BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code, X,
-  Maximize2, Minimize2, Heart // 💡 Import thêm icon Heart
+  Maximize2, Minimize2, Heart, Flag
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import { useAuth } from "../hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
 
 import ReactMarkdown from "react-markdown"; 
 import remarkGfm from "remark-gfm"; 
@@ -109,10 +110,8 @@ const Workspace = () => {
   const [activeTab, setActiveTab] = useState<"output" | "grading" | "ai">("output");
   const [showChat, setShowChat] = useState(true);
   
-  // 💡 STATE ĐỂ QUẢN LÝ VIỆC PHÓNG TO CHAT
   const [isChatExpanded, setIsChatExpanded] = useState(false);
   
-  // 💡 STATE QUẢN LÝ VIỆC LƯU BÀI
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
@@ -126,7 +125,8 @@ const Workspace = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<SubmitResponse | null>(null);
 
-  const [aiFeedback, setAiFeedback] = useState("Nhấn 'Hỏi AI' ở góc trên để nhận phân tích chi tiết về code của bạn nhé.");
+  const defaultAiFeedback = "Nhấn 'Hỏi AI' ở góc trên để nhận phân tích chi tiết về code của bạn nhé.";
+  const [aiFeedback, setAiFeedback] = useState(defaultAiFeedback);
   const [isAILoading, setIsAILoading] = useState(false);
   
   const [chatInput, setChatInput] = useState("");
@@ -163,7 +163,7 @@ const Workspace = () => {
       const exStarterCode = aiExerciseData.starterCode || aiExerciseData.StarterCode || "";
 
       setExercise({
-        id: Number(exerciseId),
+        id: Number(exerciseId) || 0,
         lessonId: 0,
         title: exTitle,
         description: exDesc,
@@ -438,7 +438,38 @@ const Workspace = () => {
     }
   };
 
-  // 💡 HÀM GỌI API LƯU BÀI TẬP VÀO DATABASE
+  const handleReportAI = async (originalAIResponse: string) => {
+    if (!user?.email) {
+      toast({ title: "Lỗi", description: "Bạn cần đăng nhập để báo cáo.", variant: "destructive" });
+      return;
+    }
+
+    const studentIssue = window.prompt("AI đang giải thích khó hiểu ở chỗ nào vậy bạn? Hãy mô tả ngắn gọn nhé:");
+    if (!studentIssue || studentIssue.trim() === "") return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/AIAssistant/report-flag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          exerciseId: exercise?.id || 1, 
+          studentEmail: user.email,
+          studentIssue: studentIssue,
+          originalAIResponse: originalAIResponse,
+          studentCode: code // 💡 ĐÃ BỔ SUNG CODE CỦA SINH VIÊN VÀO PAYLOAD GỬI LÊN
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "Đã gửi báo cáo!", description: data.message });
+      } else {
+        toast({ title: "Lỗi", description: data.message, variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Lỗi kết nối", description: "Không thể gửi báo cáo", variant: "destructive" });
+    }
+  };
+
   const handleSaveExercise = async () => {
     if (!userEmail || !exercise) return;
     setIsSaving(true);
@@ -494,7 +525,6 @@ const Workspace = () => {
 
         <div className="flex items-center gap-2">
           
-          {/* 💡 NÚT LƯU BÀI TẬP (Chỉ hiện khi là bài AI sinh ra) */}
           {isAIGenerated && userEmail && (
             <Button 
               onClick={handleSaveExercise} 
@@ -608,7 +638,7 @@ const Workspace = () => {
               
               <div className="flex-1 overflow-auto p-4 space-y-3">
                 {chatMessages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
                     <div className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${
                       msg.role === "user"
                         ? "bg-primary text-primary-foreground"
@@ -624,6 +654,19 @@ const Workspace = () => {
                           msg.content
                       )}
                     </div>
+
+                    {msg.role === "assistant" && msg.content && (
+                      <div className="mt-1.5 opacity-60 hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleReportAI(msg.content)}
+                          className="text-[11px] flex items-center gap-1.5 text-orange-400 bg-orange-400/10 hover:bg-orange-400/20 px-2 py-1 rounded-md font-medium transition-colors"
+                          title="Báo cáo AI trả lời không tốt"
+                        >
+                          <Flag className="w-3 h-3" /> Cần giảng viên hỗ trợ
+                        </button>
+                      </div>
+                    )}
+
                   </div>
                 ))}
                 {isChatLoading && (
@@ -724,54 +767,69 @@ const Workspace = () => {
 
             {activeTab === "grading" && (
                <div className="space-y-4">
-                  {!submitResult && !isSubmitting && (
-                    <p className="text-sm text-editor-foreground/60 text-center mt-10">Nhấn nút Nộp bài để xem điểm.</p>
-                  )}
-                  {isSubmitting && (
-                     <div className="flex flex-col items-center mt-10 space-y-3">
-                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                         <span className="text-sm">Đang chạy Test Case...</span>
-                     </div>
-                  )}
-                  {submitResult && submitResult.message && (
-                     <p className="text-sm text-destructive bg-destructive/10 p-3 rounded">{submitResult.message}</p>
-                  )}
-                  {submitResult && !submitResult.message && (
-                     <>
-                        <div className={`p-4 rounded border ${submitResult.status === 'Accepted' ? 'bg-success/10 border-success/30 text-success' : 'bg-destructive/10 border-destructive/30 text-destructive'}`}>
-                            <h3 className="font-bold">{submitResult.status === 'Accepted' ? 'Thành công!' : 'Sai kết quả'}</h3>
-                            <p className="text-sm opacity-90 mt-1">Vượt qua: {submitResult.passedTests}/{submitResult.totalTests} Tests</p>
-                        </div>
-                        <div className="space-y-2 mt-4">
-                            {submitResult.results.map(tc => (
-                                <div key={tc.id} className="p-3 bg-editor-line rounded text-sm">
-                                    <div className="flex items-center gap-2 font-bold">
-                                        {tc.passed ? <CheckCircle2 className="h-4 w-4 text-success"/> : <XCircle className="h-4 w-4 text-destructive"/>}
-                                        Test Case {tc.id}
-                                    </div>
-                                    {!tc.passed && (
-                                        <div className="mt-2 text-xs font-mono bg-editor p-2 rounded">
-                                            <p className="opacity-50">Input:</p>
-                                            <p className="mb-2">{tc.input}</p>
-                                            <p className="text-success opacity-80">Expected:</p>
-                                            <p className="mb-2 text-success">{tc.expectedOutput}</p>
-                                            <p className="text-destructive opacity-80">Your Output:</p>
-                                            <p className="text-destructive">{tc.actualOutput}</p>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                     </>
-                  )}
+                 {!submitResult && !isSubmitting && (
+                   <p className="text-sm text-editor-foreground/60 text-center mt-10">Nhấn nút Nộp bài để xem điểm.</p>
+                 )}
+                 {isSubmitting && (
+                    <div className="flex flex-col items-center mt-10 space-y-3">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                        <span className="text-sm">Đang chạy Test Case...</span>
+                    </div>
+                 )}
+                 {submitResult && submitResult.message && (
+                    <p className="text-sm text-destructive bg-destructive/10 p-3 rounded">{submitResult.message}</p>
+                 )}
+                 {submitResult && !submitResult.message && (
+                    <>
+                       <div className={`p-4 rounded border ${submitResult.status === 'Accepted' ? 'bg-success/10 border-success/30 text-success' : 'bg-destructive/10 border-destructive/30 text-destructive'}`}>
+                           <h3 className="font-bold">{submitResult.status === 'Accepted' ? 'Thành công!' : 'Sai kết quả'}</h3>
+                           <p className="text-sm opacity-90 mt-1">Vượt qua: {submitResult.passedTests}/{submitResult.totalTests} Tests</p>
+                       </div>
+                       <div className="space-y-2 mt-4">
+                           {submitResult.results.map(tc => (
+                               <div key={tc.id} className="p-3 bg-editor-line rounded text-sm">
+                                   <div className="flex items-center gap-2 font-bold">
+                                       {tc.passed ? <CheckCircle2 className="h-4 w-4 text-success"/> : <XCircle className="h-4 w-4 text-destructive"/>}
+                                       Test Case {tc.id}
+                                   </div>
+                                   {!tc.passed && (
+                                       <div className="mt-2 text-xs font-mono bg-editor p-2 rounded">
+                                           <p className="opacity-50">Input:</p>
+                                           <p className="mb-2">{tc.input}</p>
+                                           <p className="text-success opacity-80">Expected:</p>
+                                           <p className="mb-2 text-success">{tc.expectedOutput}</p>
+                                           <p className="text-destructive opacity-80">Your Output:</p>
+                                           <p className="text-destructive">{tc.actualOutput}</p>
+                                       </div>
+                                   )}
+                               </div>
+                           ))}
+                       </div>
+                    </>
+                 )}
                </div>
             )}
 
             {activeTab === "ai" && (
-              <div className="space-y-4 text-sm prose prose-sm prose-invert max-w-none text-editor-foreground/80">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-                    {aiFeedback}
-                </ReactMarkdown>
+              <div className="flex flex-col h-full">
+                <div className="flex-1 space-y-4 text-sm prose prose-sm prose-invert max-w-none text-editor-foreground/80">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                      {aiFeedback}
+                  </ReactMarkdown>
+                </div>
+                
+                {/* 💡 NÚT BÁO CÁO Ở TAB AI FEEDBACK */}
+                {!isAILoading && aiFeedback !== defaultAiFeedback && (
+                  <div className="mt-4 pt-4 border-t border-editor-line/50 opacity-80 hover:opacity-100 transition-opacity flex justify-start">
+                    <button
+                      onClick={() => handleReportAI(aiFeedback)}
+                      className="text-[12px] flex items-center gap-1.5 text-orange-400 bg-orange-400/10 hover:bg-orange-400/20 px-3 py-1.5 rounded-md font-medium transition-colors"
+                      title="Báo cáo AI phân tích chưa chính xác"
+                    >
+                      <Flag className="w-3.5 h-3.5" /> Cần giảng viên hỗ trợ
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

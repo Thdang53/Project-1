@@ -22,4 +22,7 @@ public class Exercise
 
     [MaxLength(50)]
     public string Difficulty { get; set; } = "Cơ bản";
+
+    public bool IsPublic { get; set; } = false; // Thuộc thư viện chung hay cá nhân?
+    public int OwnerId { get; set; } // ID người tạo ra bài này
 }

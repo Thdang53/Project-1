@@ -25,4 +25,6 @@ public class User
     public string Role { get; set; } = "Student"; // "Student" hoặc "Admin"
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public int RewardPoints { get; set; } = 0; // Điểm thưởng cho Giảng viên
 }

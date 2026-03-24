@@ -18,6 +18,9 @@ namespace backend.Data
         // BẢNG MỚI: LƯU TRỮ LỊCH SỬ NỘP BÀI CỦA SINH VIÊN
         public DbSet<Submission> Submissions { get; set; }
 
+        // BẢNG MỚI: LƯU TRỮ BÍ KÍP RAG CỦA GIẢNG VIÊN & THÔNG BÁO CHO SINH VIÊN
+        public DbSet<AICorrection> AICorrections { get; set; }
+
         // Hàm này giữ lại nhưng để trống, dành cho các cấu hình nâng cao sau này nếu cần
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
