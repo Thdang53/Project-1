@@ -8,6 +8,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 
 // Import các trang
 import LecturerDashboard from "./pages/LecturerDashboard";
+import RewardStore from "./pages/RewardStore"; // 💡 THÊM IMPORT TRANG ĐỔI THƯỞNG
 import Index from "./pages/Index";
 import Workspace from "./pages/Workspace";
 import Courses from "./pages/Courses";
@@ -87,12 +88,22 @@ const App = () => (
               } 
             />
 
-            {/* 💡 THÊM MỚI: Trang Không gian làm việc của Giảng viên */}
+            {/* Trang Không gian làm việc của Giảng viên */}
             <Route 
               path="/lecturer-dashboard" 
               element={
                 <ProtectedRoute>
                   <LecturerDashboard />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* 💡 THÊM MỚI: Trang Cửa hàng Đổi thưởng (Dành cho Giảng viên) */}
+            <Route 
+              path="/rewards" 
+              element={
+                <ProtectedRoute>
+                  <RewardStore />
                 </ProtectedRoute>
               } 
             />

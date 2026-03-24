@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { GraduationCap, Star, Sparkles, AlertTriangle, Bot, MessageSquareText, ArrowLeft, Loader2, BookOpen, Code } from "lucide-react";
+import { GraduationCap, Star, Sparkles, AlertTriangle, Bot, MessageSquareText, ArrowLeft, Loader2, BookOpen, Code, Gift } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -146,7 +146,9 @@ const LecturerDashboard = () => {
       <Navbar />
 
       <div className="flex-1 container mx-auto px-6 pt-24 pb-8 flex flex-col gap-6">
-        <div className="flex items-center justify-between">
+        
+        {/* 💡 HEADER ĐÃ ĐƯỢC CẬP NHẬT THÊM NÚT ĐỔI QUÀ */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
               <ArrowLeft className="h-5 w-5" />
@@ -159,9 +161,19 @@ const LecturerDashboard = () => {
               <p className="text-sm text-muted-foreground">Phân tích code & Dạy AI</p>
             </div>
           </div>
-          <Badge className="gap-1.5 px-4 py-2 text-sm bg-warning/10 text-warning border-warning/20">
-            <Star className="h-4 w-4 fill-current" /> Điểm cống hiến: {points} 🌟
-          </Badge>
+          
+          <div className="flex items-center gap-3">
+            <Badge className="gap-1.5 px-4 py-2.5 text-sm bg-warning/10 text-warning border-warning/20 font-bold">
+              <Star className="h-4 w-4 fill-current" /> Điểm cống hiến: {points}
+            </Badge>
+            <Button 
+              onClick={() => navigate('/rewards')}
+              className="bg-gradient-to-r from-orange-400 to-rose-400 hover:from-orange-500 hover:to-rose-500 text-white shadow-glow border-0 rounded-xl px-5 h-10 font-bold"
+            >
+              <Gift className="h-4 w-4 mr-2" />
+              Đổi Quà
+            </Button>
+          </div>
         </div>
 
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6 min-h-0">
@@ -256,7 +268,7 @@ const LecturerDashboard = () => {
                         <p className="text-sm text-foreground/90 font-medium whitespace-pre-wrap">{selectedReport.studentIssue}</p>
                       </div>
 
-                      {/* 💡 CÂU TRẢ LỜI CỦA AI ĐÃ ĐƯỢC CHỈNH MÀU NỀN ĐỂ CHỮ XANH LÁ HIỆN ĐẸP NHẤT */}
+                      {/* CÂU TRẢ LỜI CỦA AI ĐÃ ĐƯỢC CHỈNH MÀU NỀN ĐỂ CHỮ XANH LÁ HIỆN ĐẸP NHẤT */}
                       <div className="rounded-xl bg-background border border-border p-4 shadow-sm">
                         <div className="flex items-center gap-2 mb-3 pb-3 border-b border-border/50">
                           <Bot className="h-5 w-5 text-primary" />

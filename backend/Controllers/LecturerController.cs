@@ -99,5 +99,47 @@ namespace backend.Controllers
                 return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
             }
         }
+
+        public class RedeemRewardRequest
+        {
+            public string Email { get; set; } = string.Empty;
+            public int Cost { get; set; }
+            public string RewardName { get; set; } = string.Empty;
+        }
+
+        // =================================================================
+        // 3. GIẢNG VIÊN ĐỔI ĐIỂM LẤY QUÀ
+        // =================================================================
+        [HttpPost("redeem-reward")]
+        public async Task<IActionResult> RedeemReward([FromBody] RedeemRewardRequest request)
+        {
+            try
+            {
+                var lecturer = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+                if (lecturer == null) return Unauthorized(new { message = "Không tìm thấy người dùng." });
+
+                if (lecturer.RewardPoints < request.Cost)
+                {
+                    return BadRequest(new { success = false, message = "Số dư điểm không đủ để đổi món quà này." });
+                }
+
+                // Trừ điểm
+                lecturer.RewardPoints -= request.Cost;
+                
+                // (Tùy chọn tương lai: Insert 1 dòng vào bảng Lịch sử đổi thưởng - Redemptions ở đây để lưu vết)
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { 
+                    success = true, 
+                    message = "Đổi quà thành công!",
+                    newBalance = lecturer.RewardPoints 
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
+            }
+        }
     }
 }
