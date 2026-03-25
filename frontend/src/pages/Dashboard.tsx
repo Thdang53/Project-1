@@ -1,67 +1,49 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useAuth } from "../hooks/useAuth";
 import { Card, CardContent } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { Input } from "../components/ui/input";
-import { Textarea } from "../components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../components/ui/dialog";
 import { useToast } from "../hooks/use-toast";
-import { Users, BookOpen, TrendingUp, Trophy, Layers, FileText, Code2, BarChart3, AlertTriangle, Loader2, Plus, Trash2 } from "lucide-react";
+import { Users, BookOpen, TrendingUp, Trophy, Layers, FileText, Code2, BarChart3 } from "lucide-react";
 import { motion } from "framer-motion";
 
-// 💡 IMPORT TẤT CẢ 5 TAB ĐÃ TÁCH
+// API Hook & Tabs
+import { useDashboardData } from "../hooks/useDashboardData";
 import StatsTab from "../components/dashboard/StatsTab";
 import UsersTab from "../components/dashboard/UsersTab";
 import CoursesTab from "../components/dashboard/CoursesTab";
 import LessonsTab from "../components/dashboard/LessonsTab";
 import ExercisesTab from "../components/dashboard/ExercisesTab";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+// Modals
+import CourseModal from "../components/dashboard/CourseModal";
+import LessonModal from "../components/dashboard/LessonModal";
+import ExerciseModal from "../components/dashboard/ExerciseModal";
+import RoleDialog from "../components/dashboard/RoleDialog";
+import DeleteConfirmDialog from "../components/dashboard/DeleteConfirmDialog";
 
-interface Course { id: number; title: string; lecturerId?: number; }
-interface Lesson { id: number; courseId: number; title: string; orderNum: number; content: string; }
-interface Exercise { id: number; title: string; difficulty: string; description: string; testCases: string; lessonId: number; }
-interface TestCase { input: string; expectedOutput: string; }
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const Dashboard = () => {
   const { user, token } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  const [loading, setLoading] = useState(true);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [studentStats, setStudentStats] = useState<any[]>([]);
+  const { courses, lessons, exercises, studentStats, isLoading: loading, refetchAll: fetchAllData } = useDashboardData();
+  
   const [searchTerm, setSearchTerm] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  let tokenUserId: number | null = null;
-  if (token) {
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const idClaim = payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] || payload.nameid || payload.sub || payload.id;
-      if (idClaim) tokenUserId = parseInt(idClaim);
-    } catch (e) {}
-  }
-  const effectiveUserId = tokenUserId || studentStats.find(s => s.email?.toLowerCase() === user?.email?.toLowerCase())?.id || (user as any)?.id;
+  const effectiveUserId = (token && JSON.parse(atob(token.split('.')[1]))?.nameid) 
+    ? parseInt(JSON.parse(atob(token.split('.')[1])).nameid) 
+    : studentStats.find(s => s.email?.toLowerCase() === user?.email?.toLowerCase())?.id || (user as any)?.id;
 
+  // States
   const [showRoleDialog, setShowRoleDialog] = useState(false);
-  const [roleTargetUser, setRoleTargetUser] = useState<{email: string, currentRole: string, fullName: string} | null>(null);
+  const [roleTargetUser, setRoleTargetUser] = useState<any>(null);
   const [selectedNewRole, setSelectedNewRole] = useState("");
-
-  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; type: "course" | "lesson" | "exercise" | null; id: number; title: string; }>({ isOpen: false, type: null, id: 0, title: "" });
-
-  const [showAddExercise, setShowAddExercise] = useState(false);
-  const [isEditModeEx, setIsEditModeEx] = useState(false);
-  const [newExercise, setNewExercise] = useState({ id: 0, title: "", description: "", difficulty: "Easy", lessonId: "" });
-  const [testCases, setTestCases] = useState<TestCase[]>([{ input: "", expectedOutput: "" }]);
-  const [selectedCourseIdEx, setSelectedCourseIdEx] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, type: null as string | null, id: 0, title: "" });
 
   const [showAddCourse, setShowAddCourse] = useState(false);
   const [isEditModeCourse, setIsEditModeCourse] = useState(false);
@@ -69,111 +51,72 @@ const Dashboard = () => {
 
   const [showAddLesson, setShowAddLesson] = useState(false);
   const [isEditModeLesson, setIsEditModeLesson] = useState(false);
-  const [newLesson, setNewLesson] = useState({ id: 0, courseId: "", title: "", orderNum: 1, content: "Nội dung bài học..." });
+  const [newLesson, setNewLesson] = useState({ id: 0, courseId: "", title: "", orderNum: 1, content: "" });
 
-  useEffect(() => {
-    if (!user) { navigate("/login"); return; }
-    fetchAllData();
-  }, [user]);
+  const [showAddExercise, setShowAddExercise] = useState(false);
+  const [isEditModeEx, setIsEditModeEx] = useState(false);
+  const [newExercise, setNewExercise] = useState({ id: 0, title: "", description: "", difficulty: "Easy", lessonId: "" });
+  const [testCases, setTestCases] = useState([{ input: "", expectedOutput: "" }]);
+  const [selectedCourseIdEx, setSelectedCourseIdEx] = useState("");
 
-  const fetchAllData = async () => {
-    setLoading(true);
+  useEffect(() => { if (!user) navigate("/login"); }, [user, navigate]);
+
+  // Logic Xử lý API (Xóa, Đổi quyền, Lưu...)
+  const handleApiRequest = async (url: string, method: string, body?: any, successMsg = "Thành công!") => {
+    setIsSubmitting(true);
     try {
-      const [resCourses, resLessons, resExercises, resStats] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/Courses`), fetch(`${API_BASE_URL}/api/Lessons`),
-        fetch(`${API_BASE_URL}/api/Exercises`), fetch(`${API_BASE_URL}/api/UserProfile/stats`)
-      ]);
-      if (resCourses.ok) setCourses(await resCourses.json());
-      if (resLessons.ok) setLessons(await resLessons.json());
-      if (resExercises.ok) setExercises(await resExercises.json());
-      if (resStats.ok) setStudentStats(await resStats.json());
-    } catch (error) { toast({ title: "Lỗi kết nối", variant: "destructive" }); } 
-    finally { setLoading(false); }
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (res.ok) { toast({ title: successMsg }); fetchAllData(); return true; }
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || "Lỗi thao tác");
+    } catch (e: any) {
+      toast({ title: "Thất bại", description: e.message, variant: "destructive" }); return false;
+    } finally { setIsSubmitting(false); }
   };
 
   const executeDelete = async () => {
-    if (!deleteConfirm.type) return;
-    setIsSubmitting(true);
-    try {
-      let endpoint = deleteConfirm.type === "course" ? "Courses" : deleteConfirm.type === "lesson" ? "Lessons" : "Exercises";
-      const res = await fetch(`${API_BASE_URL}/api/${endpoint}/${deleteConfirm.id}`, { method: 'DELETE', headers: { "Authorization": `Bearer ${token}` } });
-      if (res.ok) {
-        toast({ title: "Thành công", description: "Đã xóa dữ liệu." });
-        setDeleteConfirm({ ...deleteConfirm, isOpen: false });
-        fetchAllData();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        toast({ title: "Lỗi xóa", description: data.message || "Lỗi", variant: "destructive" });
-      }
-    } catch (e) { toast({ title: "Lỗi hệ thống", variant: "destructive" }); } 
-    finally { setIsSubmitting(false); }
+    const ep = deleteConfirm.type === "course" ? "Courses" : deleteConfirm.type === "lesson" ? "Lessons" : "Exercises";
+    const ok = await handleApiRequest(`${API_BASE_URL}/api/${ep}/${deleteConfirm.id}`, "DELETE", null, "Đã xóa dữ liệu");
+    if (ok) setDeleteConfirm(p => ({ ...p, isOpen: false }));
   };
 
   const submitRoleChange = async () => {
     if (!roleTargetUser || roleTargetUser.currentRole === selectedNewRole) return setShowRoleDialog(false);
-    setIsSubmitting(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/UserProfile/role`, {
-        method: "PUT", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ email: roleTargetUser.email, role: selectedNewRole }),
-      });
-      if (response.ok) { toast({ title: "Thành công!" }); setShowRoleDialog(false); fetchAllData(); } 
-      else toast({ title: "Lỗi đổi quyền", variant: "destructive" });
-    } catch (error) { toast({ title: "Lỗi kết nối", variant: "destructive" }); } 
-    finally { setIsSubmitting(false); }
+    const ok = await handleApiRequest(`${API_BASE_URL}/api/UserProfile/role`, "PUT", { email: roleTargetUser.email, role: selectedNewRole });
+    if (ok) setShowRoleDialog(false);
   };
 
   const handleSaveCourse = async () => {
-    if (!newCourse.title.trim()) return toast({ title: "Lỗi nhập", variant: "destructive" });
-    setIsSubmitting(true);
-    try {
-      const url = isEditModeCourse ? `${API_BASE_URL}/api/Courses/${newCourse.id}` : `${API_BASE_URL}/api/Courses`;
-      const res = await fetch(url, { method: isEditModeCourse ? "PUT" : "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(newCourse) });
-      if (res.ok) { toast({ title: "Thành công!" }); setShowAddCourse(false); fetchAllData(); } 
-      else throw new Error();
-    } catch (e) { toast({ title: "Lỗi lưu", variant: "destructive" }); } finally { setIsSubmitting(false); }
+    if (!newCourse.title.trim()) return toast({ title: "Lỗi", description: "Nhập tên khóa học", variant: "destructive" });
+    const url = `${API_BASE_URL}/api/Courses${isEditModeCourse ? `/${newCourse.id}` : ""}`;
+    const ok = await handleApiRequest(url, isEditModeCourse ? "PUT" : "POST", newCourse);
+    if (ok) setShowAddCourse(false);
   };
 
   const handleSaveLesson = async () => {
-    if (!newLesson.title.trim() || !newLesson.courseId) return toast({ title: "Lỗi nhập", variant: "destructive" });
-    setIsSubmitting(true);
-    try {
-      const url = isEditModeLesson ? `${API_BASE_URL}/api/Lessons/${newLesson.id}` : `${API_BASE_URL}/api/Lessons`;
-      const res = await fetch(url, { method: isEditModeLesson ? "PUT" : "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ ...newLesson, courseId: parseInt(newLesson.courseId) }) });
-      if (res.ok) { toast({ title: "Thành công!" }); setShowAddLesson(false); fetchAllData(); } 
-      else throw new Error();
-    } catch (e) { toast({ title: "Thất bại", variant: "destructive" }); } finally { setIsSubmitting(false); }
+    if (!newLesson.title.trim() || !newLesson.courseId) return toast({ title: "Lỗi", description: "Thiếu thông tin", variant: "destructive" });
+    const url = `${API_BASE_URL}/api/Lessons${isEditModeLesson ? `/${newLesson.id}` : ""}`;
+    const ok = await handleApiRequest(url, isEditModeLesson ? "PUT" : "POST", { ...newLesson, courseId: parseInt(newLesson.courseId) });
+    if (ok) setShowAddLesson(false);
   };
 
   const handleSaveExercise = async () => {
-    const validTestCases = testCases.filter(tc => tc.expectedOutput.trim() !== "");
-    if (!newExercise.title.trim() || !newExercise.lessonId || validTestCases.length === 0) return toast({ title: "Lỗi dữ liệu", variant: "destructive" });
-    setIsSubmitting(true);
-    try {
-      const url = isEditModeEx ? `${API_BASE_URL}/api/Exercises/${newExercise.id}` : `${API_BASE_URL}/api/Exercises`;
-      const res = await fetch(url, { method: isEditModeEx ? "PUT" : "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ ...newExercise, lessonId: parseInt(newExercise.lessonId), testCases: JSON.stringify(validTestCases) }) });
-      if (res.ok) { toast({ title: "Thành công!" }); setShowAddExercise(false); fetchAllData(); } 
-      else throw new Error();
-    } catch (e) { toast({ title: "Thất bại", variant: "destructive" }); } finally { setIsSubmitting(false); }
+    const validTCs = testCases.filter(tc => tc.expectedOutput.trim() !== "");
+    if (!newExercise.title.trim() || !newExercise.lessonId || validTCs.length === 0) return toast({ title: "Lỗi", description: "Kiểm tra lại dữ liệu", variant: "destructive" });
+    const url = `${API_BASE_URL}/api/Exercises${isEditModeEx ? `/${newExercise.id}` : ""}`;
+    const ok = await handleApiRequest(url, isEditModeEx ? "PUT" : "POST", { ...newExercise, lessonId: parseInt(newExercise.lessonId), testCases: JSON.stringify(validTCs) });
+    if (ok) setShowAddExercise(false);
   };
 
-  // 💡 BỔ SUNG LẠI 3 HÀM DÀNH CHO TEST CASES
-  const addTestCase = () => setTestCases([...testCases, { input: "", expectedOutput: "" }]);
-  const removeTestCase = (i: number) => { if (testCases.length > 1) setTestCases(testCases.filter((_, idx) => idx !== i)); };
-  const updateTestCase = (i: number, f: keyof TestCase, v: string) => { const n = [...testCases]; n[i][f] = v; setTestCases(n); };
+  const addTC = () => setTestCases([...testCases, { input: "", expectedOutput: "" }]);
+  const rmTC = (i: number) => { if (testCases.length > 1) setTestCases(testCases.filter((_, idx) => idx !== i)); };
+  const upTC = (i: number, f: string, v: string) => { const n: any = [...testCases]; n[i][f] = v; setTestCases(n); };
 
-  // Helper
-  const getAuthorName = (lecturerId?: number) => {
-    if (!lecturerId) return "Hệ thống (Admin)";
-    const author = studentStats.find(s => s.id === lecturerId);
-    return author ? author.fullName || author.email : "Giảng viên (ẩn danh)";
-  };
-
-  const getDifficultyBadge = (diff: string) => {
-    switch (diff?.toLowerCase()) { case 'easy': return <Badge className="bg-success">Dễ</Badge>; case 'medium': return <Badge className="bg-warning">Trung bình</Badge>; case 'hard': return <Badge variant="destructive">Khó</Badge>; default: return <Badge variant="outline">{diff}</Badge>; }
-  };
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-background"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
 
   return (
     <div className="min-h-screen bg-background">
@@ -205,55 +148,19 @@ const Dashboard = () => {
             <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" /> Người dùng</TabsTrigger>
             <TabsTrigger value="stats" className="gap-1.5"><BarChart3 className="h-4 w-4" /> Thống kê</TabsTrigger>
           </TabsList>
-
-          <TabsContent value="courses">
-            <CoursesTab courses={courses} currentUser={user} effectiveUserId={effectiveUserId} getAuthorName={getAuthorName} onOpenDialog={(c) => { setIsEditModeCourse(!!c); setNewCourse(c || { id: 0, title: "" }); setShowAddCourse(true); }} onDelete={(id, title) => setDeleteConfirm({ isOpen: true, type: "course", id, title })} />
-          </TabsContent>
-          <TabsContent value="lessons">
-            <LessonsTab lessons={lessons} courses={courses} currentUser={user} effectiveUserId={effectiveUserId} onOpenDialog={(l) => { setIsEditModeLesson(!!l); setNewLesson(l ? { ...l, courseId: l.courseId.toString() } : { id: 0, courseId: "", title: "", orderNum: 1, content: "" }); setShowAddLesson(true); }} onDelete={(id, title) => setDeleteConfirm({ isOpen: true, type: "lesson", id, title })} />
-          </TabsContent>
-          <TabsContent value="exercises">
-            <ExercisesTab exercises={exercises} lessons={lessons} courses={courses} currentUser={user} effectiveUserId={effectiveUserId} getDifficultyBadge={getDifficultyBadge} onDelete={(id, title) => setDeleteConfirm({ isOpen: true, type: "exercise", id, title })} onOpenDialog={(ex) => { setIsEditModeEx(!!ex); if(ex) { setNewExercise({...ex, lessonId: ex.lessonId.toString()}); const t = lessons.find(l=>l.id===ex.lessonId); if(t) setSelectedCourseIdEx(t.courseId.toString()); try{setTestCases(JSON.parse(ex.testCases))}catch{setTestCases([{input:"",expectedOutput:""}])} } else { setNewExercise({id:0,title:"",description:"",difficulty:"Easy",lessonId:""}); setSelectedCourseIdEx(""); setTestCases([{input:"",expectedOutput:""}]); } setShowAddExercise(true); }} />
-          </TabsContent>
-          <TabsContent value="students">
-            <UsersTab studentStats={studentStats} exercisesCount={exercises.length} searchTerm={searchTerm} setSearchTerm={setSearchTerm} currentUser={user} onOpenRoleDialog={(email, role, name) => { if(user?.email===email) return; setRoleTargetUser({email, currentRole: role, fullName: name}); setSelectedNewRole(role); setShowRoleDialog(true); }} />
-          </TabsContent>
-          <TabsContent value="stats">
-            <StatsTab studentStats={studentStats} coursesCount={courses.length} exercises={exercises} />
-          </TabsContent>
+          <TabsContent value="courses"><CoursesTab courses={courses} currentUser={user} effectiveUserId={effectiveUserId} getAuthorName={(id?:number) => studentStats.find(s=>s.id===id)?.fullName || "Admin"} onOpenDialog={c => { setIsEditModeCourse(!!c); setNewCourse(c || {id:0, title:""}); setShowAddCourse(true); }} onDelete={(id, title) => setDeleteConfirm({isOpen:true, type:"course", id, title})} /></TabsContent>
+          <TabsContent value="lessons"><LessonsTab lessons={lessons} courses={courses} currentUser={user} effectiveUserId={effectiveUserId} onOpenDialog={l => { setIsEditModeLesson(!!l); setNewLesson(l ? {...l, courseId: l.courseId.toString()} : {id:0, courseId:"", title:"", orderNum:1, content:""}); setShowAddLesson(true); }} onDelete={(id, title) => setDeleteConfirm({isOpen:true, type:"lesson", id, title})} /></TabsContent>
+          <TabsContent value="exercises"><ExercisesTab exercises={exercises} lessons={lessons} courses={courses} currentUser={user} effectiveUserId={effectiveUserId} getDifficultyBadge={()=><span/>} onDelete={(id, title) => setDeleteConfirm({isOpen:true, type:"exercise", id, title})} onOpenDialog={ex => { setIsEditModeEx(!!ex); if(ex){setNewExercise({...ex, lessonId: ex.lessonId.toString()}); const t=lessons.find(l=>l.id===ex.lessonId); if(t)setSelectedCourseIdEx(t.courseId.toString()); try{setTestCases(JSON.parse(ex.testCases))}catch{setTestCases([{input:"",expectedOutput:""}])}}else{setNewExercise({id:0,title:"",description:"",difficulty:"Easy",lessonId:""}); setSelectedCourseIdEx(""); setTestCases([{input:"",expectedOutput:""}])} setShowAddExercise(true); }} /></TabsContent>
+          <TabsContent value="students"><UsersTab studentStats={studentStats} exercisesCount={exercises.length} searchTerm={searchTerm} setSearchTerm={setSearchTerm} currentUser={user} onOpenRoleDialog={(email, role, name) => { setRoleTargetUser({email, currentRole: role, fullName: name}); setSelectedNewRole(role); setShowRoleDialog(true); }} /></TabsContent>
+          <TabsContent value="stats"><StatsTab studentStats={studentStats} coursesCount={courses.length} exercises={exercises} /></TabsContent>
         </Tabs>
       </div>
 
-      {/* DIALOG THÊM KHÓA HỌC */}
-      <Dialog open={showAddCourse} onOpenChange={setShowAddCourse}><DialogContent><DialogHeader><DialogTitle>{isEditModeCourse ? "Sửa" : "Tạo"} khóa học</DialogTitle></DialogHeader><div className="space-y-4 mt-4"><Input placeholder="Tên khóa học" value={newCourse.title} onChange={e => setNewCourse({ ...newCourse, title: e.target.value })} /><Button onClick={handleSaveCourse} disabled={isSubmitting} className="w-full bg-primary">{isSubmitting ? <Loader2 className="animate-spin" /> : "Lưu"}</Button></div></DialogContent></Dialog>
-      
-      {/* DIALOG THÊM BÀI HỌC */}
-      <Dialog open={showAddLesson} onOpenChange={setShowAddLesson}><DialogContent><DialogHeader><DialogTitle>{isEditModeLesson ? "Sửa" : "Tạo"} bài học</DialogTitle></DialogHeader><div className="space-y-4 mt-4">
-        <Select value={newLesson.courseId} onValueChange={v => setNewLesson({ ...newLesson, courseId: v })}><SelectTrigger><SelectValue placeholder="Chọn Khóa học" /></SelectTrigger><SelectContent>{courses.filter(c => user?.role === "Admin" || c.lecturerId === effectiveUserId).map(c => (<SelectItem key={c.id} value={c.id.toString()}>{c.title}</SelectItem>))}</SelectContent></Select>
-        <Input placeholder="Tên bài học" value={newLesson.title} onChange={e => setNewLesson({ ...newLesson, title: e.target.value })} />
-        <Input type="number" placeholder="Số thứ tự" value={newLesson.orderNum} onChange={e => setNewLesson({ ...newLesson, orderNum: parseInt(e.target.value) || 1 })} />
-        <Button onClick={handleSaveLesson} disabled={isSubmitting} className="w-full bg-primary">Lưu</Button></div></DialogContent>
-      </Dialog>
-
-      {/* DIALOG THÊM BÀI TẬP */}
-      <Dialog open={showAddExercise} onOpenChange={setShowAddExercise}><DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{isEditModeEx ? "Sửa" : "Tạo"} bài tập</DialogTitle></DialogHeader><div className="space-y-4 mt-4">
-        <div className="grid grid-cols-2 gap-3"><Select value={selectedCourseIdEx} onValueChange={(v) => { setSelectedCourseIdEx(v); setNewExercise({...newExercise, lessonId: ""}); }}><SelectTrigger><SelectValue placeholder="Khóa học" /></SelectTrigger><SelectContent>{courses.filter(c => user?.role === "Admin" || c.lecturerId === effectiveUserId).map(c => (<SelectItem key={c.id} value={c.id.toString()}>{c.title}</SelectItem>))}</SelectContent></Select>
-        <Select value={newExercise.lessonId} onValueChange={v => setNewExercise({ ...newExercise, lessonId: v })} disabled={!selectedCourseIdEx}><SelectTrigger><SelectValue placeholder="Bài học" /></SelectTrigger><SelectContent>{lessons.filter(l => l.courseId.toString() === selectedCourseIdEx).map(l => (<SelectItem key={l.id} value={l.id.toString()}>Bài {l.orderNum}: {l.title}</SelectItem>))}</SelectContent></Select></div>
-        <Input placeholder="Tiêu đề" value={newExercise.title} onChange={e => setNewExercise(p => ({ ...p, title: e.target.value }))} /><Textarea placeholder="Mô tả..." rows={4} value={newExercise.description} onChange={e => setNewExercise(p => ({ ...p, description: e.target.value }))} />
-        <Select value={newExercise.difficulty} onValueChange={v => setNewExercise(p => ({ ...p, difficulty: v }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="Easy">Dễ</SelectItem><SelectItem value="Medium">Trung bình</SelectItem><SelectItem value="Hard">Khó</SelectItem></SelectContent></Select>
-        <div className="pt-4 border-t"><div className="flex justify-between mb-4"><label className="font-semibold">Test Cases</label><Button type="button" variant="secondary" size="sm" onClick={addTestCase}><Plus className="h-3 w-3" /> Thêm</Button></div>
-          <div className="space-y-3">{testCases.map((tc, idx) => (<div key={idx} className="flex gap-2"><Input placeholder="Input" value={tc.input} onChange={e => updateTestCase(idx, 'input', e.target.value)} /><Input placeholder="Output" value={tc.expectedOutput} onChange={e => updateTestCase(idx, 'expectedOutput', e.target.value)} />{testCases.length > 1 && <Button type="button" variant="ghost" onClick={() => removeTestCase(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>}</div>))}</div></div>
-        <Button onClick={handleSaveExercise} disabled={isSubmitting} className="w-full bg-primary">Lưu</Button></div></DialogContent>
-      </Dialog>
-
-      {/* POPUP ĐỔI QUYỀN */}
-      <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}><DialogContent className="sm:max-w-[425px]"><DialogHeader><DialogTitle>Quản lý quyền</DialogTitle></DialogHeader>
-        <div className="py-4"><Select value={selectedNewRole} onValueChange={setSelectedNewRole}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="Student">Sinh viên</SelectItem><SelectItem value="Lecturer">Giảng viên</SelectItem><SelectItem value="Admin">Admin</SelectItem></SelectContent></Select></div>
-        <DialogFooter><Button onClick={submitRoleChange} disabled={isSubmitting}>Cập nhật</Button></DialogFooter></DialogContent>
-      </Dialog>
-
-      {/* POPUP XÓA */}
-      <Dialog open={deleteConfirm.isOpen} onOpenChange={(open) => setDeleteConfirm(prev => ({ ...prev, isOpen: open }))}><DialogContent className="sm:max-w-[425px]"><DialogHeader><DialogTitle className="flex gap-2 text-destructive"><AlertTriangle className="h-5 w-5" /> Xác nhận xóa</DialogTitle><DialogDescription>Xóa <strong className="text-foreground">{deleteConfirm.title}</strong>?</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}>Hủy</Button><Button variant="destructive" onClick={executeDelete} disabled={isSubmitting}>Xóa</Button></DialogFooter></DialogContent></Dialog>
+      <CourseModal open={showAddCourse} setOpen={setShowAddCourse} isEdit={isEditModeCourse} course={newCourse} setCourse={setNewCourse} onSave={handleSaveCourse} isSubmitting={isSubmitting} />
+      <LessonModal open={showAddLesson} setOpen={setShowAddLesson} isEdit={isEditModeLesson} lesson={newLesson} setLesson={setNewLesson} courses={courses} user={user} effectiveUserId={effectiveUserId} onSave={handleSaveLesson} isSubmitting={isSubmitting} />
+      <ExerciseModal open={showAddExercise} setOpen={setShowAddExercise} isEdit={isEditModeEx} ex={newExercise} setEx={setNewExercise} courses={courses} lessons={lessons} user={user} effectiveUserId={effectiveUserId} selectedCourseId={selectedCourseIdEx} setSelectedCourseId={setSelectedCourseIdEx} testCases={testCases} addTestCase={addTC} updateTestCase={upTC} removeTestCase={rmTC} onSave={handleSaveExercise} isSubmitting={isSubmitting} />
+      <RoleDialog open={showRoleDialog} setOpen={setShowRoleDialog} targetUser={roleTargetUser} role={selectedNewRole} setRole={setSelectedNewRole} onSubmit={submitRoleChange} isSubmitting={isSubmitting} />
+      <DeleteConfirmDialog open={deleteConfirm.isOpen} setOpen={(open:boolean) => setDeleteConfirm(p => ({...p, isOpen: open}))} info={deleteConfirm} onConfirm={executeDelete} isSubmitting={isSubmitting} />
     </div>
   );
 };

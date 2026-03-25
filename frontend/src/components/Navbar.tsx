@@ -113,11 +113,11 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
           {/* 💡 HIỂN THỊ CÁC NÚT QUẢN LÝ DỰA TRÊN ROLE */}
           {(user?.role === "Lecturer" || user?.role === "Admin") && (
             <>
-              <Link to="/lecturer-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-amber-500 font-semibold'}`}>
+              <Link to="/lecturer-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
                 Giảng viên
               </Link>
               
-              <Link to="/dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-primary font-semibold'}`}>
+              <Link to="/dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
                 Quản lý Khóa học
               </Link>
             </>
