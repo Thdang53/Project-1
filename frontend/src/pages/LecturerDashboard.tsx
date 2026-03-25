@@ -78,12 +78,26 @@ const LecturerDashboard = () => {
   
   const [points, setPoints] = useState((user as any)?.rewardPoints || 0);
 
+  // 💡 GỌI API LẤY ĐIỂM CHÍNH XÁC TỪ DATABASE MỖI KHI VÀO TRANG
   useEffect(() => {
-    if ((user as any)?.rewardPoints) {
-      setPoints((user as any).rewardPoints);
-    }
+    const fetchBalance = async () => {
+      if (!user?.email) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/Lecturer/my-points?email=${user.email}`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data && data.success) {
+          setPoints(data.points);
+        }
+      } catch (error) {
+        console.error("Lỗi lấy điểm:", error);
+      }
+    };
+
+    fetchBalance();
     fetchPendingFlags();
-  }, [user]);
+  }, [user, token]);
 
   const fetchPendingFlags = async () => {
     try {

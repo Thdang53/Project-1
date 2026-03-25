@@ -100,11 +100,27 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
           </span>
         </Link>
 
+        {/* CÁC MENU ĐIỀU HƯỚNG */}
         <div className="hidden md:flex items-center gap-8">
-          <Link to="/" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>Trang chủ</Link>
-          <Link to="/student-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>Không gian học tập</Link>
+          <Link to="/" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+            Trang chủ
+          </Link>
+          
+          <Link to="/student-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+            Không gian học tập
+          </Link>
+          
+          {/* 💡 HIỂN THỊ CÁC NÚT QUẢN LÝ DỰA TRÊN ROLE */}
           {(user?.role === "Lecturer" || user?.role === "Admin") && (
-            <Link to="/lecturer-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-amber-500 font-semibold'}`}>Khu vực Giảng viên</Link>
+            <>
+              <Link to="/lecturer-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-amber-500 font-semibold'}`}>
+                Giảng viên
+              </Link>
+              
+              <Link to="/dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-primary font-semibold'}`}>
+                Quản lý Khóa học
+              </Link>
+            </>
           )}
         </div>
 
@@ -185,8 +201,10 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
                   {showMenu && (
                     <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden origin-top-right">
                       <div className="px-4 py-3 border-b border-gray-50 bg-gray-50/50">
-                        <p className="text-sm font-medium text-gray-900">Xin chào!</p>
-                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                        <p className="text-sm font-medium text-gray-900 flex items-center justify-between">
+                          Xin chào! <Badge variant="outline" className="text-[10px] ml-2 bg-primary/5 text-primary">{user.role}</Badge>
+                        </p>
+                        <p className="text-xs text-gray-500 truncate mt-1">{user.email}</p>
                       </div>
                       <div className="p-1">
                         <button onClick={handleLogout} className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg">
@@ -199,7 +217,7 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
               </div>
             </>
           ) : (
-            <Link to="/login"><Button variant={isTransparent ? "outline" : "default"}>Đăng nhập</Button></Link>
+            <Link to="/login"><Button variant={isTransparent ? "outline" : "default"} className={isTransparent ? "text-white border-white/30 hover:bg-white/20" : ""}>Đăng nhập</Button></Link>
           )}
         </div>
       </div>

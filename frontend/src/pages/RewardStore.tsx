@@ -45,10 +45,10 @@ const RewardStore = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   
-  // Lịch sử đổi quà (Tạm thời để trống chờ Backend, hoặc có thể map dữ liệu thật vào đây)
+  // Lịch sử đổi quà
   const [history, setHistory] = useState<any[]>([]); 
 
-  // 💡 LOGIC 1: BẢO VỆ ROUTE & LẤY ĐIỂM THẬT TỪ DATABASE
+  // 💡 LOGIC 1: BẢO VỆ ROUTE & LẤY ĐIỂM + LỊCH SỬ TỪ DATABASE
   useEffect(() => {
     // Nếu chưa đăng nhập hoặc không phải Giảng viên/Admin -> Đá về trang chủ
     if (!user || (user.role !== "Lecturer" && user.role !== "Admin")) {
@@ -57,29 +57,38 @@ const RewardStore = () => {
       return;
     }
 
-    // Fetch số dư điểm mới nhất của user
-    const fetchBalance = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/UserProfileControll/email/${user.email}`, {
+        // Lấy Điểm mới nhất
+        const resPoints = await fetch(`${API_BASE_URL}/api/Lecturer/my-points?email=${user.email}`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
-        const data = await res.json();
-        if (data && data.rewardPoints !== undefined) {
-          setPoints(data.rewardPoints);
+        const dataPoints = await resPoints.json();
+        if (dataPoints && dataPoints.success) {
+          setPoints(dataPoints.points);
+        }
+
+        // Lấy Lịch sử đổi quà
+        const resHistory = await fetch(`${API_BASE_URL}/api/Lecturer/my-redemptions?email=${user.email}`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const dataHistory = await resHistory.json();
+        if (dataHistory && dataHistory.success) {
+          setHistory(dataHistory.data);
         }
       } catch (error) {
-        console.error("Lỗi lấy thông tin điểm:", error);
+        console.error("Lỗi lấy thông tin:", error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchBalance();
+    fetchData();
   }, [user, navigate, token]);
 
   const filtered = filter === "all" ? rewards : rewards.filter((r) => r.category === filter);
 
-  // 💡 LOGIC 2: GỌI API TRỪ ĐIỂM KHI ĐỔI QUÀ
+  // 💡 LOGIC 2: GỌI API TRỪ ĐIỂM VÀ LƯU LỊCH SỬ KHI ĐỔI QUÀ
   const handleRedeem = async (reward: typeof rewards[0]) => {
     if (points < reward.cost || !user?.email) return;
     
@@ -103,7 +112,7 @@ const RewardStore = () => {
           description: `Đã trừ ${reward.cost} điểm. Admin sẽ sớm liên hệ để trao quà cho bạn.` 
         });
         
-        // Thêm ngay vào lịch sử trên UI cho nóng
+        // Thêm ngay vào lịch sử trên UI để phản hồi tức thì
         setHistory(prev => [{
           date: new Date().toLocaleDateString('vi-VN'),
           item: reward.title,

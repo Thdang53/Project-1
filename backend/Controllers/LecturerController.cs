@@ -2,12 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using backend.Data;
 using backend.Models;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace backend.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    // [Authorize(Roles = "Lecturer,Admin")] 
     public class LecturerController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -17,9 +19,6 @@ namespace backend.Controllers
             _context = context;
         }
 
-       // =================================================================
-        // 1. LẤY DANH SÁCH BÁO CÁO (ĐÃ KÈM TÊN BÀI TẬP, MÔ TẢ, TÊN SINH VIÊN VÀ CODE)
-        // =================================================================
         [HttpGet("pending-flags")]
         public async Task<IActionResult> GetPendingFlags()
         {
@@ -31,17 +30,13 @@ namespace backend.Controllers
                     .Select(x => new {
                         x.Id,
                         x.ExerciseId,
-                        // 💡 Tự động lấy Tên bài tập
                         ExerciseTitle = _context.Exercises.Where(e => e.Id == x.ExerciseId).Select(e => e.Title).FirstOrDefault() ?? ("Bài tập #" + x.ExerciseId),
-                        
-                        // 💡 Lấy Mô tả bài tập (Đề bài)
                         ExerciseDescription = _context.Exercises.Where(e => e.Id == x.ExerciseId).Select(e => e.Description).FirstOrDefault() ?? "Không có dữ liệu đề bài.",
-                        
                         x.StudentId,
                         StudentName = _context.Users.Where(u => u.Id == x.StudentId).Select(u => u.FullName ?? u.Email).FirstOrDefault() ?? ("Học viên #" + x.StudentId),
                         x.StudentIssue,
                         x.OriginalAIResponse,
-                        x.StudentCode, // 💡 MỚI THÊM: Lấy đoạn code của sinh viên
+                        x.StudentCode,
                         x.CreatedAt
                     })
                     .ToListAsync();
@@ -61,9 +56,6 @@ namespace backend.Controllers
             public string LecturerHint { get; set; } = string.Empty;
         }
 
-        // =================================================================
-        // 2. GIẢNG VIÊN GỬI "BÍ KÍP" VÀ NHẬN ĐIỂM THƯỞNG
-        // =================================================================
         [HttpPost("resolve-flag")]
         public async Task<IActionResult> ResolveFlag([FromBody] ResolveFlagRequest request)
         {
@@ -78,21 +70,14 @@ namespace backend.Controllers
                 var lecturer = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.LecturerEmail);
                 if (lecturer == null) return Unauthorized(new { message = "Không tìm thấy tài khoản Giảng viên." });
 
-                // Cập nhật RAG (Bí kíp)
                 correction.LecturerHint = request.LecturerHint;
                 correction.LecturerId = lecturer.Id;
                 correction.IsResolved = true;
 
-                // Cộng điểm thưởng cho Giảng viên
                 lecturer.RewardPoints += 10; 
-
                 await _context.SaveChangesAsync();
 
-                return Ok(new { 
-                    success = true, 
-                    message = "Cập nhật bộ não AI thành công!",
-                    newRewardPoints = lecturer.RewardPoints 
-                });
+                return Ok(new { success = true, message = "Cập nhật bộ não AI thành công!", newRewardPoints = lecturer.RewardPoints });
             }
             catch (Exception ex)
             {
@@ -107,9 +92,6 @@ namespace backend.Controllers
             public string RewardName { get; set; } = string.Empty;
         }
 
-        // =================================================================
-        // 3. GIẢNG VIÊN ĐỔI ĐIỂM LẤY QUÀ
-        // =================================================================
         [HttpPost("redeem-reward")]
         public async Task<IActionResult> RedeemReward([FromBody] RedeemRewardRequest request)
         {
@@ -119,22 +101,66 @@ namespace backend.Controllers
                 if (lecturer == null) return Unauthorized(new { message = "Không tìm thấy người dùng." });
 
                 if (lecturer.RewardPoints < request.Cost)
-                {
                     return BadRequest(new { success = false, message = "Số dư điểm không đủ để đổi món quà này." });
-                }
 
                 // Trừ điểm
                 lecturer.RewardPoints -= request.Cost;
-                
-                // (Tùy chọn tương lai: Insert 1 dòng vào bảng Lịch sử đổi thưởng - Redemptions ở đây để lưu vết)
+
+                // 💡 LƯU VÀO DATABASE BẢNG LỊCH SỬ
+                var redemption = new Redemption
+                {
+                    LecturerId = lecturer.Id,
+                    ItemName = request.RewardName,
+                    Cost = request.Cost,
+                    Status = "Đang xử lý",
+                    Code = "Chờ cấp mã",
+                    RedeemedAt = DateTime.UtcNow
+                };
+                _context.Redemptions.Add(redemption);
 
                 await _context.SaveChangesAsync();
 
-                return Ok(new { 
-                    success = true, 
-                    message = "Đổi quà thành công!",
-                    newBalance = lecturer.RewardPoints 
+                return Ok(new { success = true, message = "Đổi quà thành công!", newBalance = lecturer.RewardPoints });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
+            }
+        }
+
+        [HttpGet("my-points")]
+        public async Task<IActionResult> GetMyPoints([FromQuery] string email)
+        {
+            var lecturer = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (lecturer == null) return Unauthorized(new { message = "Không tìm thấy người dùng." });
+            return Ok(new { success = true, points = lecturer.RewardPoints });
+        }
+
+        // =================================================================
+        // 💡 API MỚI: LẤY LỊCH SỬ ĐỔI QUÀ TỪ DATABASE
+        // =================================================================
+        [HttpGet("my-redemptions")]
+        public async Task<IActionResult> GetMyRedemptions([FromQuery] string email)
+        {
+            try
+            {
+                var lecturer = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+                if (lecturer == null) return Unauthorized();
+
+                var history = await _context.Redemptions
+                    .Where(r => r.LecturerId == lecturer.Id)
+                    .OrderByDescending(r => r.RedeemedAt)
+                    .ToListAsync();
+
+                var formattedHistory = history.Select(r => new {
+                    date = r.RedeemedAt.ToLocalTime().ToString("dd/MM/yyyy"),
+                    item = r.ItemName,
+                    status = r.Status,
+                    code = r.Code,
+                    statusColor = r.Status == "Đang xử lý" ? "bg-warning/10 text-warning border-warning/20" : "bg-success/10 text-success border-success/20"
                 });
+
+                return Ok(new { success = true, data = formattedHistory });
             }
             catch (Exception ex)
             {

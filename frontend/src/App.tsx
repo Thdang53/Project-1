@@ -29,42 +29,36 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            {/* CÁC TUYẾN ĐƯỜNG CÔNG CỘNG */}
-            {/* Trang chủ công cộng */}
+            {/* ========================================== */}
+            {/* CÁC TUYẾN ĐƯỜNG CÔNG CỘNG (AI CŨNG VÀO ĐƯỢC) */}
+            {/* ========================================== */}
             <Route path="/" element={<Index />} />
-            
-            {/* Trang đăng nhập công cộng */}
             <Route path="/login" element={<Login />} />
-            
-            {/* Trang danh sách khóa học công cộng */}
             <Route path="/courses" element={<Courses />} />
 
-            {/* CÁC TUYẾN ĐƯỜNG ĐƯỢC BẢO VỆ (CẦN ĐĂNG NHẬP) */}
-            
-            {/* Trang bài học AI chuẩn bị trước khi code */}
+            {/* ========================================== */}
+            {/* KHU VỰC HỌC TẬP (DÀNH CHO STUDENT, LECTURER, ADMIN CŨNG CÓ THỂ XEM) */}
+            {/* ========================================== */}
             <Route 
               path="/ai-lesson/:lessonId" 
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["Student", "Lecturer", "Admin"]}>
                   <AILesson />
                 </ProtectedRoute>
               } 
             />
-            {/* Route dự phòng nếu gọi /ai-lesson không có ID */}
             <Route 
               path="/ai-lesson" 
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["Student", "Lecturer", "Admin"]}>
                   <AILesson />
                 </ProtectedRoute>
               } 
             />
-
-            {/* Trang gõ code và làm bài tập */}
             <Route 
               path="/workspace" 
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["Student", "Lecturer", "Admin"]}>
                   <Workspace />
                 </ProtectedRoute>
               } 
@@ -72,17 +66,29 @@ const App = () => (
             <Route 
               path="/workspace/:lessonId" 
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["Student", "Lecturer", "Admin"]}>
                   <Workspace />
                 </ProtectedRoute>
               } 
             />
+            <Route 
+              path="/student-dashboard" 
+              element={
+                <ProtectedRoute allowedRoles={["Student", "Lecturer", "Admin"]}>
+                  <StudentDashboard />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* ========================================== */}
+            {/* KHU VỰC QUẢN LÝ (CHỈ DÀNH CHO LECTURER VÀ ADMIN) */}
+            {/* ========================================== */}
             
-            {/* Trang quản lý cho Admin */}
+            {/* Trang Quản lý Khóa học */}
             <Route 
               path="/dashboard" 
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["Lecturer", "Admin"]}>
                   <Dashboard />
                 </ProtectedRoute>
               } 
@@ -92,33 +98,25 @@ const App = () => (
             <Route 
               path="/lecturer-dashboard" 
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["Lecturer", "Admin"]}>
                   <LecturerDashboard />
                 </ProtectedRoute>
               } 
             />
 
-            {/* 💡 THÊM MỚI: Trang Cửa hàng Đổi thưởng (Dành cho Giảng viên) */}
+            {/* Trang Cửa hàng Đổi thưởng */}
             <Route 
               path="/rewards" 
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={["Lecturer", "Admin"]}>
                   <RewardStore />
                 </ProtectedRoute>
               } 
             />
-            
-            {/* Trang danh sách bài tập của sinh viên */}
-            <Route 
-              path="/student-dashboard" 
-              element={
-                <ProtectedRoute>
-                  <StudentDashboard />
-                </ProtectedRoute>
-              } 
-            />
-            
-            {/* Trang Hồ sơ cá nhân của sinh viên */}
+
+            {/* ========================================== */}
+            {/* CÁC TUYẾN ĐƯỜNG CHUNG (CẦN ĐĂNG NHẬP, KHÔNG PHÂN BIỆT ROLE) */}
+            {/* ========================================== */}
             <Route 
               path="/profile" 
               element={

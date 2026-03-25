@@ -10,10 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../components/ui/dialog";
 import { useToast } from "../hooks/use-toast";
-// 💡 ĐÃ BỔ SUNG THÊM ICON: CheckCircle2, Terminal
-import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit, Search, Layers, FileText, CheckCircle2, Terminal } from "lucide-react";
+// 💡 Đã import AlertTriangle cho Popup Xóa
+import { Users, BookOpen, TrendingUp, Plus, BarChart3, GraduationCap, Trophy, Trash2, Code2, Loader2, Edit, Search, Layers, FileText, CheckCircle2, Terminal, Lock, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -21,6 +21,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 interface Course {
   id: number;
   title: string;
+  lecturerId?: number; 
 }
 
 interface Lesson {
@@ -59,6 +60,31 @@ const Dashboard = () => {
   
   const [searchTerm, setSearchTerm] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // LOGIC MỚI: BÓC TÁCH ID TRỰC TIẾP TỪ TOKEN (Đảm bảo 100% lấy được ID Giảng viên)
+  let tokenUserId: number | null = null;
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const idClaim = payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] || payload.nameid || payload.sub || payload.id;
+      if (idClaim) tokenUserId = parseInt(idClaim);
+    } catch (e) {}
+  }
+  
+  const effectiveUserId = tokenUserId || studentStats.find(s => s.email?.toLowerCase() === user?.email?.toLowerCase())?.id || (user as any)?.id;
+
+  // States cho Popup Đổi quyền
+  const [showRoleDialog, setShowRoleDialog] = useState(false);
+  const [roleTargetUser, setRoleTargetUser] = useState<{email: string, currentRole: string, fullName: string} | null>(null);
+  const [selectedNewRole, setSelectedNewRole] = useState("");
+
+  // 💡 STATES CHO POPUP XÁC NHẬN XÓA
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    type: "course" | "lesson" | "exercise" | null;
+    id: number;
+    title: string;
+  }>({ isOpen: false, type: null, id: 0, title: "" });
 
   // States cho Form Bài tập
   const [showAddExercise, setShowAddExercise] = useState(false);
@@ -105,38 +131,81 @@ const Dashboard = () => {
     }
   };
 
-  const handleToggleRole = async (email: string, currentRole: string) => {
+  // ============================== LOGIC XÓA DÙNG CHUNG (POPUP) ==============================
+  const executeDelete = async () => {
+    if (!deleteConfirm.type) return;
+    setIsSubmitting(true);
+    try {
+      let endpoint = "";
+      if (deleteConfirm.type === "course") endpoint = "Courses";
+      else if (deleteConfirm.type === "lesson") endpoint = "Lessons";
+      else if (deleteConfirm.type === "exercise") endpoint = "Exercises";
+
+      const res = await fetch(`${API_BASE_URL}/api/${endpoint}/${deleteConfirm.id}`, {
+        method: 'DELETE',
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+
+      if (res.ok) {
+        toast({ title: "Thành công", description: "Đã xóa dữ liệu thành công." });
+        setDeleteConfirm({ ...deleteConfirm, isOpen: false });
+        fetchAllData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast({ title: "Lỗi xóa", description: data.message || "Từ chối truy cập hoặc dữ liệu đang được sử dụng.", variant: "destructive" });
+      }
+    } catch (e) {
+      toast({ title: "Lỗi hệ thống", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ============================== LOGIC ĐỔI QUYỀN ==============================
+  const handleOpenRoleDialog = (email: string, currentRole: string, fullName: string) => {
     if (user?.email === email) {
-      toast({ title: "Lỗi", description: "Bạn không thể tự hạ quyền của chính mình!", variant: "destructive" });
+      toast({ title: "Lỗi", description: "Bạn không thể tự đổi quyền của chính mình!", variant: "destructive" });
+      return;
+    }
+    setRoleTargetUser({ email, currentRole, fullName: fullName || "Người dùng" });
+    setSelectedNewRole(currentRole);
+    setShowRoleDialog(true);
+  };
+
+  const submitRoleChange = async () => {
+    if (!roleTargetUser) return;
+    if (roleTargetUser.currentRole === selectedNewRole) {
+      setShowRoleDialog(false);
       return;
     }
 
-    const newRole = currentRole === "Admin" ? "Student" : "Admin";
-    const confirmMsg = newRole === "Admin" 
-      ? `Cấp quyền Quản trị viên (Admin) cho ${email}?` 
-      : `Hạ cấp ${email} xuống thành Sinh viên?`;
-
-    if (!window.confirm(confirmMsg)) return;
-
+    setIsSubmitting(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/UserProfile/role`, {
         method: "PUT",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}` 
-        },
-        body: JSON.stringify({ email, role: newRole }),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ email: roleTargetUser.email, role: selectedNewRole }),
       });
 
       if (response.ok) {
-        toast({ title: "Thành công!", description: `Đã thay đổi quyền tài khoản ${email}.` });
-        fetchAllData(); // Refresh data
+        const roleLabels: Record<string, string> = { Student: "Sinh viên", Lecturer: "Giảng viên", Admin: "Quản trị viên" };
+        toast({ title: "Thành công!", description: `Đã cấp quyền ${roleLabels[selectedNewRole]} cho ${roleTargetUser.email}.` });
+        setShowRoleDialog(false);
+        fetchAllData(); 
       } else {
         toast({ title: "Lỗi", description: "Không thể đổi quyền.", variant: "destructive" });
       }
     } catch (error) {
       toast({ title: "Lỗi kết nối", description: "Server C# đang gặp sự cố.", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
     }
+  };
+
+  const getAuthorName = (lecturerId?: number) => {
+    if (!lecturerId) return "Hệ thống (Admin)";
+    const author = studentStats.find(s => s.id === lecturerId);
+    return author ? author.fullName || author.email : "Giảng viên (ẩn danh)";
   };
 
   // ============================== LOGIC KHÓA HỌC ==============================
@@ -166,29 +235,14 @@ const Dashboard = () => {
         toast({ title: "Thành công!", description: "Đã lưu Khóa học." });
         setShowAddCourse(false); 
         fetchAllData();
-      } else throw new Error("Lỗi API");
-    } catch (e) { 
-      toast({ title: "Lỗi", description: "Không thể lưu", variant: "destructive" }); 
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Lỗi máy chủ C#");
+      }
+    } catch (e: any) { 
+      toast({ title: "Lỗi", description: e.message || "Không thể lưu", variant: "destructive" }); 
     } finally { 
       setIsSubmitting(false); 
-    }
-  };
-
-  const handleDeleteCourse = async (id: number) => {
-    if (!window.confirm("Xóa khóa học này có thể làm lỗi các Bài học bên trong. Bạn chắc chắn chứ?")) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/Courses/${id}`, { 
-        method: 'DELETE', 
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if (res.ok) { 
-        toast({ title: "Đã xóa" }); 
-        fetchAllData(); 
-      } else {
-        toast({ title: "Lỗi xóa", variant: "destructive" });
-      }
-    } catch (e) {
-      toast({ title: "Lỗi", variant: "destructive" });
     }
   };
 
@@ -220,29 +274,14 @@ const Dashboard = () => {
         toast({ title: "Thành công!", description: "Đã lưu Bài học." });
         setShowAddLesson(false); 
         fetchAllData();
-      } else throw new Error("Lỗi API");
-    } catch (e) { 
-      toast({ title: "Lỗi", description: "Không thể lưu", variant: "destructive" }); 
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Từ chối truy cập hoặc lỗi Server");
+      }
+    } catch (e: any) { 
+      toast({ title: "Thất bại", description: e.message || "Không thể lưu", variant: "destructive" }); 
     } finally { 
       setIsSubmitting(false); 
-    }
-  };
-
-  const handleDeleteLesson = async (id: number) => {
-    if (!window.confirm("Xóa Bài học này có thể làm lỗi các Bài tập bên trong. Chắc chắn xóa?")) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/Lessons/${id}`, { 
-        method: 'DELETE', 
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if (res.ok) { 
-        toast({ title: "Đã xóa" }); 
-        fetchAllData(); 
-      } else {
-        toast({ title: "Lỗi xóa", variant: "destructive" });
-      }
-    } catch(e) {
-      toast({ title: "Lỗi", variant: "destructive" });
     }
   };
 
@@ -251,19 +290,13 @@ const Dashboard = () => {
     if (exercise) {
       setIsEditModeEx(true);
       setNewExercise({ ...exercise, lessonId: exercise.lessonId.toString() });
-      
       const targetLesson = lessons.find(l => l.id === exercise.lessonId);
-      if (targetLesson) {
-        setSelectedCourseIdEx(targetLesson.courseId.toString());
-      }
+      if (targetLesson) setSelectedCourseIdEx(targetLesson.courseId.toString());
       
       try { 
         const parsedTCs = JSON.parse(exercise.testCases);
-        if (parsedTCs && parsedTCs.length > 0) {
-          setTestCases(parsedTCs);
-        } else {
-          setTestCases([{ input: "", expectedOutput: "" }]);
-        }
+        if (parsedTCs && parsedTCs.length > 0) setTestCases(parsedTCs);
+        else setTestCases([{ input: "", expectedOutput: "" }]);
       } catch { 
         setTestCases([{ input: "", expectedOutput: "" }]); 
       }
@@ -284,12 +317,7 @@ const Dashboard = () => {
 
     setIsSubmitting(true);
     try {
-      const payload = { 
-        ...newExercise, 
-        lessonId: parseInt(newExercise.lessonId), 
-        testCases: JSON.stringify(validTestCases) 
-      };
-      
+      const payload = { ...newExercise, lessonId: parseInt(newExercise.lessonId), testCases: JSON.stringify(validTestCases) };
       const url = isEditModeEx ? `${API_BASE_URL}/api/Exercises/${newExercise.id}` : `${API_BASE_URL}/api/Exercises`;
       const method = isEditModeEx ? "PUT" : "POST";
       
@@ -304,31 +332,13 @@ const Dashboard = () => {
         setShowAddExercise(false); 
         fetchAllData();
       } else {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || "Lỗi máy chủ C#");
       }
     } catch (error: any) { 
-      toast({ title: "Lỗi", description: error.message, variant: "destructive" }); 
+      toast({ title: "Thất bại", description: error.message, variant: "destructive" }); 
     } finally { 
       setIsSubmitting(false); 
-    }
-  };
-
-  const handleDeleteExercise = async (id: number) => {
-    if (!window.confirm("Bạn chắc chắn muốn xóa bài tập này?")) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/Exercises/${id}`, { 
-        method: 'DELETE', 
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if (res.ok) { 
-        toast({ title: "Đã xóa" }); 
-        fetchAllData(); 
-      } else {
-        toast({ title: "Lỗi xóa", description: "Không thể xóa (có thể đã có SV nộp bài).", variant: "destructive" });
-      }
-    } catch (error) {
-      toast({ title: "Lỗi kết nối", description: "Lỗi server C#.", variant: "destructive" });
     }
   };
 
@@ -367,9 +377,9 @@ const Dashboard = () => {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-foreground">
-              Dashboard <span className="text-gradient-primary">Giảng viên</span>
+              Dashboard <span className="text-gradient-primary">Quản Lý</span>
             </h1>
-            <p className="mt-1 text-muted-foreground">Quản lý toàn diện hệ thống học tập</p>
+            <p className="mt-1 text-muted-foreground">Công cụ dành cho {user?.role === "Admin" ? "Quản trị viên" : "Giảng viên"}</p>
           </div>
         </div>
 
@@ -396,7 +406,7 @@ const Dashboard = () => {
           ))}
         </div>
 
-        <Tabs defaultValue="exercises" className="space-y-6">
+        <Tabs defaultValue="courses" className="space-y-6">
           <TabsList className="flex flex-wrap h-auto gap-2 justify-start">
             <TabsTrigger value="courses" className="gap-1.5"><Layers className="h-4 w-4" /> Khóa học</TabsTrigger>
             <TabsTrigger value="lessons" className="gap-1.5"><FileText className="h-4 w-4" /> Bài học</TabsTrigger>
@@ -440,28 +450,46 @@ const Dashboard = () => {
                     <TableRow>
                       <TableHead className="w-16">ID</TableHead>
                       <TableHead>Tên khóa học</TableHead>
+                      <TableHead>Tác giả / Giảng viên</TableHead>
                       <TableHead className="text-right">Hành động</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {courses.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-center text-muted-foreground py-8">Chưa có khóa học nào.</TableCell>
-                      </TableRow>
-                    ) : courses.map(c => (
-                      <TableRow key={c.id}>
-                        <TableCell>#{c.id}</TableCell>
-                        <TableCell className="font-semibold text-foreground">{c.title}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/10" onClick={() => handleOpenCourseDialog(c)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleDeleteCourse(c.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-8">Chưa có khóa học nào.</TableCell></TableRow>
+                    ) : courses.map(c => {
+                      const isOwner = effectiveUserId ? (c.lecturerId === effectiveUserId) : false;
+                      const canEdit = user?.role === "Admin" || isOwner || !effectiveUserId;
+
+                      return (
+                        <TableRow key={c.id}>
+                          <TableCell>#{c.id}</TableCell>
+                          <TableCell className="font-semibold text-foreground">{c.title}</TableCell>
+                          <TableCell>
+                            <Badge variant={c.lecturerId ? "outline" : "secondary"} className={isOwner ? "border-primary text-primary bg-primary/5" : ""}>
+                              {isOwner ? "Bạn" : getAuthorName(c.lecturerId)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {canEdit ? (
+                              <>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/10" onClick={() => handleOpenCourseDialog(c)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                {/* 💡 GỌI POPUP XÓA MỚI THAY VÌ HÀM CŨ */}
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => setDeleteConfirm({ isOpen: true, type: "course", id: c.id, title: c.title })}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            ) : (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-not-allowed opacity-50" title="Chỉ tác giả mới được sửa">
+                                <Lock className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -490,7 +518,15 @@ const Dashboard = () => {
                         <Select value={newLesson.courseId} onValueChange={v => setNewLesson({ ...newLesson, courseId: v })}>
                           <SelectTrigger><SelectValue placeholder="Chọn Khóa học" /></SelectTrigger>
                           <SelectContent>
-                            {courses.map(c => (<SelectItem key={c.id} value={c.id.toString()}>{c.title}</SelectItem>))}
+                            {courses.length === 0 && <SelectItem value="empty" disabled>Chưa có khóa học nào</SelectItem>}
+                            {courses.map(c => {
+                              const isMyCourse = effectiveUserId && c.lecturerId === effectiveUserId;
+                              return (
+                                <SelectItem key={c.id} value={c.id.toString()}>
+                                  {c.title} {isMyCourse ? "(Của bạn)" : ""}
+                                </SelectItem>
+                              );
+                            })}
                           </SelectContent>
                         </Select>
                       </div>
@@ -533,28 +569,41 @@ const Dashboard = () => {
                   </TableHeader>
                   <TableBody>
                     {lessons.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">Chưa có bài học nào.</TableCell>
-                      </TableRow>
-                    ) : lessons.map(l => (
-                      <TableRow key={l.id}>
-                        <TableCell>#{l.id}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="bg-muted">
-                            {courses.find(c => c.id === l.courseId)?.title || "Unknown"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-semibold text-foreground">Bài {l.orderNum}: {l.title}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/10" onClick={() => handleOpenLessonDialog(l)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleDeleteLesson(l.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-8">Chưa có bài học nào.</TableCell></TableRow>
+                    ) : lessons.map(l => {
+                      const parentCourse = courses.find(c => c.id === l.courseId);
+                      const isOwner = effectiveUserId ? parentCourse?.lecturerId === effectiveUserId : false;
+                      const canEdit = user?.role === "Admin" || isOwner || !effectiveUserId;
+
+                      return (
+                        <TableRow key={l.id}>
+                          <TableCell>#{l.id}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-muted">
+                              {parentCourse?.title || "Unknown"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-semibold text-foreground">Bài {l.orderNum}: {l.title}</TableCell>
+                          <TableCell className="text-right">
+                            {canEdit ? (
+                              <>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/10" onClick={() => handleOpenLessonDialog(l)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                {/* 💡 GỌI POPUP XÓA MỚI */}
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => setDeleteConfirm({ isOpen: true, type: "lesson", id: l.id, title: l.title })}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            ) : (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-not-allowed opacity-50" title="Chỉ tác giả mới được sửa">
+                                <Lock className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -580,7 +629,6 @@ const Dashboard = () => {
                     </DialogHeader>
                     
                     <div className="space-y-4 mt-4">
-                      {/* CHỌN KHÓA HỌC & BÀI HỌC */}
                       <div className="grid grid-cols-2 gap-3 p-3 bg-muted/30 rounded-lg border border-border">
                         <div>
                           <label className="text-xs font-semibold mb-1 block">Thuộc Khóa học:</label>
@@ -588,15 +636,20 @@ const Dashboard = () => {
                             value={selectedCourseIdEx} 
                             onValueChange={(v) => { 
                               setSelectedCourseIdEx(v); 
-                              setNewExercise({...newExercise, lessonId: ""}); // Đổi khóa học reset bài học
+                              setNewExercise({...newExercise, lessonId: ""});
                             }}
                           >
                             <SelectTrigger><SelectValue placeholder="Chọn Khóa học..." /></SelectTrigger>
                             <SelectContent>
                               {courses.length === 0 && <SelectItem value="empty" disabled>Chưa có khóa học nào</SelectItem>}
-                              {courses.map(c => (
-                                <SelectItem key={c.id} value={c.id.toString()}>{c.title}</SelectItem>
-                              ))}
+                              {courses.map(c => {
+                                const isMyCourse = effectiveUserId && c.lecturerId === effectiveUserId;
+                                return (
+                                  <SelectItem key={c.id} value={c.id.toString()}>
+                                    {c.title} {isMyCourse ? "(Của bạn)" : ""}
+                                  </SelectItem>
+                                );
+                              })}
                             </SelectContent>
                           </Select>
                         </div>
@@ -621,17 +674,8 @@ const Dashboard = () => {
                         </div>
                       </div>
 
-                      <Input 
-                        placeholder="Tiêu đề bài tập (VD: Tính tổng 2 số)" 
-                        value={newExercise.title} 
-                        onChange={e => setNewExercise(p => ({ ...p, title: e.target.value }))} 
-                      />
-                      <Textarea 
-                        placeholder="Mô tả chi tiết yêu cầu đề bài..." 
-                        rows={4}
-                        value={newExercise.description} 
-                        onChange={e => setNewExercise(p => ({ ...p, description: e.target.value }))} 
-                      />
+                      <Input placeholder="Tiêu đề bài tập (VD: Tính tổng 2 số)" value={newExercise.title} onChange={e => setNewExercise(p => ({ ...p, title: e.target.value }))} />
+                      <Textarea placeholder="Mô tả chi tiết yêu cầu đề bài..." rows={4} value={newExercise.description} onChange={e => setNewExercise(p => ({ ...p, description: e.target.value }))} />
                       
                       <div className="grid grid-cols-2 gap-3">
                         <Select value={newExercise.difficulty} onValueChange={v => setNewExercise(p => ({ ...p, difficulty: v }))}>
@@ -654,18 +698,8 @@ const Dashboard = () => {
                         <div className="space-y-3">
                           {testCases.map((tc, idx) => (
                             <div key={idx} className="flex gap-2 items-start bg-muted/30 p-2 rounded-lg border border-border">
-                              <Input 
-                                placeholder="Input (VD: 1 2)" 
-                                value={tc.input} 
-                                onChange={e => updateTestCase(idx, 'input', e.target.value)} 
-                                className="font-mono text-sm" 
-                              />
-                              <Input 
-                                placeholder="Expected Output (VD: 3)" 
-                                value={tc.expectedOutput} 
-                                onChange={e => updateTestCase(idx, 'expectedOutput', e.target.value)} 
-                                className="font-mono text-sm border-success/50" 
-                              />
+                              <Input placeholder="Input (VD: 1 2)" value={tc.input} onChange={e => updateTestCase(idx, 'input', e.target.value)} className="font-mono text-sm" />
+                              <Input placeholder="Expected Output (VD: 3)" value={tc.expectedOutput} onChange={e => updateTestCase(idx, 'expectedOutput', e.target.value)} className="font-mono text-sm border-success/50" />
                               {testCases.length > 1 && (
                                 <Button type="button" variant="ghost" size="icon" onClick={() => removeTestCase(idx)}>
                                   <Trash2 className="h-4 w-4 text-destructive" />
@@ -698,10 +732,13 @@ const Dashboard = () => {
                   </TableHeader>
                   <TableBody>
                     {exercises.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">Chưa có bài tập nào. Hãy thêm mới!</TableCell>
-                      </TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Chưa có bài tập nào. Hãy thêm mới!</TableCell></TableRow>
                     ) : exercises.map(ex => {
+                      const parentLesson = lessons.find(l => l.id === ex.lessonId);
+                      const parentCourse = courses.find(c => c.id === parentLesson?.courseId);
+                      const isOwner = effectiveUserId ? parentCourse?.lecturerId === effectiveUserId : false;
+                      const canEdit = user?.role === "Admin" || isOwner || !effectiveUserId;
+
                       let tcCount = 0;
                       try { if (ex.testCases) tcCount = JSON.parse(ex.testCases).length; } catch(e){}
 
@@ -710,23 +747,30 @@ const Dashboard = () => {
                           <TableCell className="font-medium text-muted-foreground">#{ex.id}</TableCell>
                           <TableCell>
                             <Badge variant="secondary" className="bg-muted">
-                              {lessons.find(l => l.id === ex.lessonId)?.title || "Không xác định"}
+                              {parentLesson?.title || "Không xác định"}
                             </Badge>
                           </TableCell>
-                          <TableCell>
-                            <p className="font-semibold text-foreground line-clamp-1">{ex.title}</p>
-                          </TableCell>
+                          <TableCell><p className="font-semibold text-foreground line-clamp-1">{ex.title}</p></TableCell>
                           <TableCell>{getDifficultyBadge(ex.difficulty)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className="font-mono bg-background"><Code2 className="h-3 w-3 mr-1" /> {tcCount}</Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10" onClick={() => handleOpenExerciseDialog(ex)}>
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDeleteExercise(ex.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {canEdit ? (
+                              <>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10" onClick={() => handleOpenExerciseDialog(ex)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                {/* 💡 GỌI POPUP XÓA MỚI */}
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteConfirm({ isOpen: true, type: "exercise", id: ex.id, title: ex.title })}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            ) : (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground cursor-not-allowed opacity-50" title="Chỉ tác giả mới được sửa">
+                                <Lock className="h-4 w-4" />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -743,18 +787,12 @@ const Dashboard = () => {
               <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <CardTitle>Quản lý Người dùng & Tiến độ</CardTitle>
-                  <CardDescription>Theo dõi bài tập và phân quyền Admin cho hệ thống</CardDescription>
+                  <CardDescription>Theo dõi bài tập và phân quyền (Chỉ Admin)</CardDescription>
                 </div>
                 
                 <div className="relative w-full md:w-72">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder="Tìm theo tên hoặc email..."
-                    className="pl-9 bg-muted/50 focus:bg-background transition-colors"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+                  <Input type="text" placeholder="Tìm theo tên hoặc email..." className="pl-9 bg-muted/50 focus:bg-background transition-colors" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 </div>
               </CardHeader>
               <CardContent>
@@ -770,51 +808,25 @@ const Dashboard = () => {
                   </TableHeader>
                   <TableBody>
                     {studentStats.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
-                          <GraduationCap className="h-8 w-8 mx-auto mb-3 opacity-20" />
-                          Chưa có người dùng nào đăng ký trong hệ thống.
-                        </TableCell>
-                      </TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-12"><GraduationCap className="h-8 w-8 mx-auto mb-3 opacity-20" />Chưa có người dùng nào đăng ký.</TableCell></TableRow>
                     ) : filteredStudents.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
-                          <Search className="h-8 w-8 mx-auto mb-3 opacity-20" />
-                          Không tìm thấy người dùng nào phù hợp với "{searchTerm}"
-                        </TableCell>
-                      </TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-12"><Search className="h-8 w-8 mx-auto mb-3 opacity-20" />Không tìm thấy người dùng.</TableCell></TableRow>
                     ) : filteredStudents.map((student, idx) => (
                       <TableRow key={idx}>
                         <TableCell className="font-bold text-foreground">{student.fullName}</TableCell>
                         <TableCell className="text-muted-foreground">{student.email}</TableCell>
                         <TableCell className="text-center">
-                          <span className={`font-bold ${student.completedExercises === exercises.length && exercises.length > 0 ? 'text-success' : 'text-primary'}`}>
-                            {student.completedExercises}
-                          </span>
+                          <span className={`font-bold ${student.completedExercises === exercises.length && exercises.length > 0 ? 'text-success' : 'text-primary'}`}>{student.completedExercises}</span>
                           <span className="text-muted-foreground text-sm"> / {exercises.length}</span>
                         </TableCell>
                         <TableCell className="text-right text-sm text-muted-foreground">
-                          {student.lastActive 
-                            ? new Date(student.lastActive).toLocaleString('vi-VN') 
-                            : 'Chưa có hoạt động'}
+                          {student.lastActive ? new Date(student.lastActive).toLocaleString('vi-VN') : 'Chưa có hoạt động'}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-2">
-                            {student.role === "Admin" ? (
-                               <Badge className="bg-destructive hover:bg-destructive cursor-help">Admin</Badge>
-                            ) : (
-                               <Badge variant="outline" className="cursor-help">Sinh viên</Badge>
-                            )}
-                            
-                            {user?.email !== student.email && (
-                              <Button 
-                                onClick={() => handleToggleRole(student.email, student.role)}
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-7 text-xs border border-border"
-                              >
-                                Đổi quyền
-                              </Button>
+                            {student.role === "Admin" ? <Badge className="bg-destructive hover:bg-destructive">Admin</Badge> : student.role === "Lecturer" ? <Badge className="bg-amber-500 hover:bg-amber-500">Giảng viên</Badge> : <Badge variant="outline">Sinh viên</Badge>}
+                            {user?.role === "Admin" && user?.email !== student.email && (
+                              <Button onClick={() => handleOpenRoleDialog(student.email, student.role, student.fullName)} variant="ghost" size="sm" className="h-7 text-xs border border-border ml-2">Đổi quyền</Button>
                             )}
                           </div>
                         </TableCell>
@@ -824,136 +836,67 @@ const Dashboard = () => {
                 </Table>
               </CardContent>
             </Card>
+
+            <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Quản lý quyền hạn</DialogTitle>
+                  <DialogDescription>Thay đổi vai trò cho người dùng <span className="font-bold text-foreground">{roleTargetUser?.fullName}</span> ({roleTargetUser?.email})</DialogDescription>
+                </DialogHeader>
+                <div className="py-4 space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Chọn vai trò mới:</label>
+                    <Select value={selectedNewRole} onValueChange={setSelectedNewRole}>
+                      <SelectTrigger><SelectValue placeholder="Chọn vai trò" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Student">Sinh viên (Student)</SelectItem>
+                        <SelectItem value="Lecturer">Giảng viên (Lecturer)</SelectItem>
+                        <SelectItem value="Admin">Quản trị viên (Admin)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowRoleDialog(false)} disabled={isSubmitting}>Hủy</Button>
+                  <Button onClick={submitRoleChange} disabled={isSubmitting} className="bg-primary">{isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Cập nhật quyền"}</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
           </TabsContent>
 
-          {/* TAB 5: THỐNG KÊ (ĐÃ ĐƯỢC NÂNG CẤP) */}
+          {/* TAB 5: THỐNG KÊ */}
           <TabsContent value="stats" className="space-y-6 focus:outline-none">
-            
-            {/* 1. KHU VỰC THẺ TỔNG QUAN (OVERVIEW CARDS) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Card className="border-border shadow-sm">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="p-4 bg-primary/10 text-primary rounded-2xl">
-                    <Users className="h-8 w-8" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Tổng Học Viên</p>
-                    <h3 className="text-3xl font-bold text-foreground">
-                      {studentStats.filter(s => s.role === 'Student').length}
-                    </h3>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border shadow-sm">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="p-4 bg-success/10 text-success rounded-2xl">
-                    <CheckCircle2 className="h-8 w-8" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Tổng Lượt Nộp Bài</p>
-                    <h3 className="text-3xl font-bold text-foreground">
-                      {studentStats.reduce((sum, s) => sum + (s.totalSubmissions || 0), 0)}
-                    </h3>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border shadow-sm">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="p-4 bg-warning/10 text-warning rounded-2xl">
-                    <BookOpen className="h-8 w-8" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Tổng Khóa Học</p>
-                    <h3 className="text-3xl font-bold text-foreground">{courses.length}</h3>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border shadow-sm">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="p-4 bg-destructive/10 text-destructive rounded-2xl">
-                    <Terminal className="h-8 w-8" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Tổng Bài Tập</p>
-                    <h3 className="text-3xl font-bold text-foreground">{exercises.length}</h3>
-                  </div>
-                </CardContent>
-              </Card>
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="border-border shadow-sm"><CardContent className="p-6 flex items-center gap-4"><div className="p-4 bg-primary/10 text-primary rounded-2xl"><Users className="h-8 w-8" /></div><div><p className="text-sm font-medium text-muted-foreground">Tổng Học Viên</p><h3 className="text-3xl font-bold text-foreground">{studentStats.filter(s => s.role === 'Student').length}</h3></div></CardContent></Card>
+              <Card className="border-border shadow-sm"><CardContent className="p-6 flex items-center gap-4"><div className="p-4 bg-success/10 text-success rounded-2xl"><CheckCircle2 className="h-8 w-8" /></div><div><p className="text-sm font-medium text-muted-foreground">Tổng Lượt Nộp Bài</p><h3 className="text-3xl font-bold text-foreground">{studentStats.reduce((sum, s) => sum + (s.totalSubmissions || 0), 0)}</h3></div></CardContent></Card>
+              <Card className="border-border shadow-sm"><CardContent className="p-6 flex items-center gap-4"><div className="p-4 bg-warning/10 text-warning rounded-2xl"><BookOpen className="h-8 w-8" /></div><div><p className="text-sm font-medium text-muted-foreground">Tổng Khóa Học</p><h3 className="text-3xl font-bold text-foreground">{courses.length}</h3></div></CardContent></Card>
+              <Card className="border-border shadow-sm"><CardContent className="p-6 flex items-center gap-4"><div className="p-4 bg-destructive/10 text-destructive rounded-2xl"><Terminal className="h-8 w-8" /></div><div><p className="text-sm font-medium text-muted-foreground">Tổng Bài Tập</p><h3 className="text-3xl font-bold text-foreground">{exercises.length}</h3></div></CardContent></Card>
             </div>
-
             <div className="grid lg:grid-cols-3 gap-6">
-              {/* 2. BẢNG XẾP HẠNG & TIẾN ĐỘ HỌC VIÊN (Bên trái, chiếm 2 phần) */}
               <Card className="border-border shadow-card overflow-hidden lg:col-span-2">
                 <div className="p-6 border-b border-border bg-card">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-warning" /> 
-                    Bảng Xếp Hạng & Tiến Độ Học Viên
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Theo dõi số lượng bài tập đã giải quyết và tần suất hoạt động của từng tài khoản.
-                  </p>
+                  <h3 className="text-xl font-bold flex items-center gap-2"><Trophy className="h-5 w-5 text-warning" /> Bảng Xếp Hạng & Tiến Độ Học Viên</h3>
                 </div>
                 <CardContent className="p-0 overflow-x-auto">
                   <Table>
-                    <TableHeader className="bg-muted/50">
-                      <TableRow>
-                        <TableHead className="w-16 text-center py-4">Top</TableHead>
-                        <TableHead>Học viên</TableHead>
-                        <TableHead className="text-center">Tổng lượt nộp</TableHead>
-                        <TableHead className="text-center">Bài đã giải (PASS)</TableHead>
-                        <TableHead className="text-right pr-6">Hoạt động gần nhất</TableHead>
-                      </TableRow>
-                    </TableHeader>
+                    <TableHeader className="bg-muted/50"><TableRow><TableHead className="w-16 text-center py-4">Top</TableHead><TableHead>Học viên</TableHead><TableHead className="text-center">Tổng lượt nộp</TableHead><TableHead className="text-center">Bài đã giải (PASS)</TableHead><TableHead className="text-right pr-6">Hoạt động gần nhất</TableHead></TableRow></TableHeader>
                     <TableBody>
-                      {studentStats.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
-                            Chưa có dữ liệu thống kê.
-                          </TableCell>
+                      {studentStats.filter(s => s.role === 'Student' || s.totalSubmissions > 0).map((stat, index) => (
+                        <TableRow key={stat.email} className="hover:bg-muted/30 transition-colors">
+                          <TableCell className="text-center font-bold">{index === 0 ? <span className="text-warning text-lg">🥇 1</span> : index === 1 ? <span className="text-muted-foreground text-lg">🥈 2</span> : index === 2 ? <span className="text-orange-400 text-lg">🥉 3</span> : `#${index + 1}`}</TableCell>
+                          <TableCell><div className="font-bold text-foreground">{stat.fullName || "Chưa cập nhật tên"}</div><div className="text-sm text-muted-foreground">{stat.email}</div></TableCell>
+                          <TableCell className="text-center font-mono">{stat.totalSubmissions || 0}</TableCell>
+                          <TableCell className="text-center"><span className="font-bold text-success text-lg">{stat.completedExercises || 0}</span><span className="text-muted-foreground text-xs ml-1">bài</span></TableCell>
+                          <TableCell className="text-right text-muted-foreground text-sm pr-6">{stat.lastActive ? new Date(stat.lastActive).toLocaleString('vi-VN') : "Chưa từng nộp bài"}</TableCell>
                         </TableRow>
-                      ) : (
-                        // Lọc những sinh viên có nộp bài hoặc là Student
-                        studentStats.filter(s => s.role === 'Student' || s.totalSubmissions > 0).map((stat, index) => (
-                          <TableRow key={stat.email} className="hover:bg-muted/30 transition-colors">
-                            <TableCell className="text-center font-bold">
-                              {index === 0 ? <span className="text-warning text-lg">🥇 1</span> : 
-                               index === 1 ? <span className="text-muted-foreground text-lg">🥈 2</span> : 
-                               index === 2 ? <span className="text-orange-400 text-lg">🥉 3</span> : 
-                               `#${index + 1}`}
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-bold text-foreground">{stat.fullName || "Chưa cập nhật tên"}</div>
-                              <div className="text-sm text-muted-foreground">{stat.email}</div>
-                            </TableCell>
-                            <TableCell className="text-center font-mono">
-                              {stat.totalSubmissions || 0}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <span className="font-bold text-success text-lg">{stat.completedExercises || 0}</span>
-                              <span className="text-muted-foreground text-xs ml-1">bài</span>
-                            </TableCell>
-                            <TableCell className="text-right text-muted-foreground text-sm pr-6">
-                              {stat.lastActive 
-                                ? new Date(stat.lastActive).toLocaleString('vi-VN') 
-                                : "Chưa từng nộp bài"}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
+                      ))}
                     </TableBody>
                   </Table>
                 </CardContent>
               </Card>
-
-              {/* 3. BIỂU ĐỒ PHÂN BỐ (Bên phải, chiếm 1 phần) */}
               <Card className="border-border shadow-card h-fit">
-                <CardHeader>
-                  <CardTitle className="text-lg">Phân bố bài tập</CardTitle>
-                  <CardDescription>Theo dõi số lượng bài tập theo từng mức độ khó</CardDescription>
-                </CardHeader>
+                <CardHeader><CardTitle className="text-lg">Phân bố bài tập</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-5">
                     {["Easy", "Medium", "Hard"].map(level => {
@@ -961,16 +904,10 @@ const Dashboard = () => {
                       const pct = exercises.length > 0 ? (count / exercises.length) * 100 : 0;
                       const labels: Record<string, string> = { Easy: "Dễ", Medium: "Trung bình", Hard: "Khó" };
                       const colors: Record<string, string> = { Easy: "bg-success", Medium: "bg-warning", Hard: "bg-destructive" };
-                      
                       return (
                         <div key={level}>
-                          <div className="flex justify-between text-sm mb-1.5">
-                            <span className="text-foreground font-semibold">{labels[level]}</span>
-                            <span className="text-muted-foreground font-mono">{count} bài</span>
-                          </div>
-                          <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                            <div className={`h-full rounded-full ${colors[level]} transition-all`} style={{ width: `${pct}%` }} />
-                          </div>
+                          <div className="flex justify-between text-sm mb-1.5"><span className="text-foreground font-semibold">{labels[level]}</span><span className="text-muted-foreground font-mono">{count} bài</span></div>
+                          <div className="h-2.5 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${colors[level]} transition-all`} style={{ width: `${pct}%` }} /></div>
                         </div>
                       );
                     })}
@@ -982,6 +919,30 @@ const Dashboard = () => {
           
         </Tabs>
       </div>
+
+      {/* 💡 POPUP XÓA DÙNG CHUNG CHO TẤT CẢ (MỚI THÊM VÀO) */}
+      <Dialog open={deleteConfirm.isOpen} onOpenChange={(open) => setDeleteConfirm(prev => ({ ...prev, isOpen: open }))}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" /> Xác nhận xóa
+            </DialogTitle>
+            <DialogDescription className="pt-3 text-base text-foreground/90">
+              Bạn có chắc chắn muốn xóa {deleteConfirm.type === "course" ? "Khóa học" : deleteConfirm.type === "lesson" ? "Bài học" : "Bài tập"} <strong className="text-foreground">{deleteConfirm.title}</strong> không?
+              <br/><br/>
+              <span className="text-destructive font-semibold">Cảnh báo:</span> Hành động này không thể hoàn tác và có thể làm mất các dữ liệu liên kết bên trong (Bài học, Bài nộp của sinh viên).
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))} disabled={isSubmitting}>
+              Hủy bỏ
+            </Button>
+            <Button variant="destructive" onClick={executeDelete} disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Xóa vĩnh viễn"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization; 
 using backend.Data;
 using backend.Models;
+using System.Security.Claims;
 
 namespace backend.Controllers
 {
@@ -17,6 +18,16 @@ namespace backend.Controllers
             _context = context;
         }
 
+        // =======================================================
+        // Hàm hỗ trợ: Lấy thông tin User đang đăng nhập từ Token
+        // =======================================================
+        private async Task<User?> GetCurrentUserAsync()
+        {
+            var email = User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst("Email")?.Value;
+            if (string.IsNullOrEmpty(email)) return null;
+            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        }
+
         // ==========================================
         // 1. LẤY DANH SÁCH BÀI TẬP (GET) - AI CŨNG XEM ĐƯỢC
         // ==========================================
@@ -27,13 +38,9 @@ namespace backend.Controllers
             {
                 return NotFound("Không tìm thấy bảng Exercises trong CSDL.");
             }
-            // Sắp xếp bài mới nhất lên đầu
             return await _context.Exercises.OrderByDescending(e => e.Id).ToListAsync();
         }
 
-        // ==========================================
-        // 2. LẤY 1 BÀI TẬP CỤ THỂ (GET) - AI CŨNG XEM ĐƯỢC
-        // ==========================================
         [HttpGet("{id}")]
         public async Task<ActionResult<Exercise>> GetExercise(int id)
         {
@@ -53,34 +60,35 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // 3. THÊM BÀI TẬP MỚI (POST) - CHỈ ADMIN
+        // 3. THÊM BÀI TẬP MỚI (POST) - ADMIN & LECTURER
         // ==========================================
         [HttpPost]
-        [Authorize] // Bắt buộc phải có token JWT (đã đăng nhập)
+        [Authorize]
         public async Task<ActionResult<Exercise>> PostExercise(Exercise exercise)
         {
-            // KIỂM TRA QUYỀN ADMIN TỪ TOKEN
-            if (User.FindFirst("Role")?.Value != "Admin")
+            var role = User.FindFirst("Role")?.Value ?? User.FindFirst(ClaimTypes.Role)?.Value;
+            if (role != "Admin" && role != "Lecturer")
             {
-                return StatusCode(403, new { message = "Từ chối truy cập: Chỉ Giảng viên mới có quyền thêm bài tập." });
+                return StatusCode(403, new { message = "Từ chối truy cập: Chỉ Admin hoặc Giảng viên mới có quyền thêm bài tập." });
             }
 
-            if (_context.Exercises == null)
-            {
-                return Problem("Entity set 'AppDbContext.Exercises' is null.");
-            }
-
-            // 💡 CẬP NHẬT MỚI: Ràng buộc tính hợp lệ của Bài học (LessonId)
             if (exercise.LessonId <= 0)
-            {
                 return BadRequest(new { message = "Vui lòng chọn một Bài học (Lesson) hợp lệ." });
-            }
 
-            // Kiểm tra xem LessonId được gửi lên có thực sự tồn tại trong bảng Lessons không
-            var lessonExists = await _context.Lessons.AnyAsync(l => l.Id == exercise.LessonId);
-            if (!lessonExists)
+            var lesson = await _context.Lessons.FirstOrDefaultAsync(l => l.Id == exercise.LessonId);
+            if (lesson == null)
+                return BadRequest(new { message = "Bài học này không tồn tại trong hệ thống." });
+
+            // 💡 KIỂM TRA BẢO MẬT KÉP: Dò ngược từ Lesson -> Course -> Lecturer
+            if (role == "Lecturer")
             {
-                return BadRequest(new { message = "Bài học này không tồn tại trong hệ thống. Vui lòng kiểm tra lại." });
+                var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == lesson.CourseId);
+                var currentUser = await GetCurrentUserAsync();
+
+                if (course == null || currentUser == null || course.LecturerId != currentUser.Id)
+                {
+                    return StatusCode(403, new { message = "Bạn không có quyền thêm bài tập vào khóa học của giảng viên khác." });
+                }
             }
 
             _context.Exercises.Add(exercise);
@@ -90,81 +98,82 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // 4. XÓA BÀI TẬP (DELETE) - CHỈ ADMIN
+        // 4. CẬP NHẬT BÀI TẬP (PUT) - ADMIN & LECTURER
         // ==========================================
-        [HttpDelete("{id}")]
+        [HttpPut("{id}")]
         [Authorize]
-        public async Task<IActionResult> DeleteExercise(int id)
+        public async Task<IActionResult> PutExercise(int id, Exercise exercise)
         {
-            if (User.FindFirst("Role")?.Value != "Admin")
+            if (id != exercise.Id) return BadRequest(new { message = "ID bài tập không khớp." });
+
+            var role = User.FindFirst("Role")?.Value ?? User.FindFirst(ClaimTypes.Role)?.Value;
+            if (role != "Admin" && role != "Lecturer")
+                return StatusCode(403, new { message = "Từ chối truy cập: Chỉ Admin hoặc Giảng viên mới có quyền sửa bài tập." });
+
+            var existingExercise = await _context.Exercises.FindAsync(id);
+            if (existingExercise == null) return NotFound(new { message = "Không tìm thấy bài tập để sửa." });
+
+            var newLesson = await _context.Lessons.FirstOrDefaultAsync(l => l.Id == exercise.LessonId);
+            if (newLesson == null) return BadRequest(new { message = "Bài học được chọn không tồn tại." });
+
+            // 💡 KIỂM TRA BẢO MẬT: Kiểm tra khóa học cũ VÀ khóa học mới
+            if (role == "Lecturer")
             {
-                return StatusCode(403, new { message = "Từ chối truy cập: Chỉ Giảng viên mới có quyền xóa bài tập." });
+                var currentUser = await GetCurrentUserAsync();
+
+                // 1. Kiểm tra xem Giảng viên có sở hữu Khóa học CŨ (nơi bài tập đang đứng) không
+                var oldLesson = await _context.Lessons.FirstOrDefaultAsync(l => l.Id == existingExercise.LessonId);
+                var oldCourse = oldLesson != null ? await _context.Courses.FirstOrDefaultAsync(c => c.Id == oldLesson.CourseId) : null;
+
+                if (oldCourse == null || currentUser == null || oldCourse.LecturerId != currentUser.Id)
+                {
+                    return StatusCode(403, new { message = "Bạn không có quyền sửa bài tập của giảng viên khác." });
+                }
+
+                // 2. Kiểm tra xem Giảng viên có sở hữu Khóa học MỚI (nơi muốn chuyển bài tập sang) không
+                var newCourse = await _context.Courses.FirstOrDefaultAsync(c => c.Id == newLesson.CourseId);
+                if (newCourse == null || newCourse.LecturerId != currentUser.Id)
+                {
+                    return StatusCode(403, new { message = "Bạn không có quyền chuyển bài tập sang khóa học của người khác." });
+                }
             }
 
-            if (_context.Exercises == null) return NotFound();
-            
-            var exercise = await _context.Exercises.FindAsync(id);
-            if (exercise == null) return NotFound();
-
-            // Lưu ý: Nếu bài tập này đã có sinh viên nộp bài (bảng Submissions),
-            // SQL có thể chặn không cho xóa để bảo vệ dữ liệu, tùy theo cấu hình Cascade.
-            _context.Exercises.Remove(exercise);
+            _context.Entry(existingExercise).CurrentValues.SetValues(exercise);
             await _context.SaveChangesAsync();
 
             return NoContent();
         }
 
         // ==========================================
-        // 5. CẬP NHẬT BÀI TẬP (PUT) - CHỈ ADMIN
+        // 5. XÓA BÀI TẬP (DELETE) - ADMIN & LECTURER
         // ==========================================
-        [HttpPut("{id}")]
+        [HttpDelete("{id}")]
         [Authorize]
-        public async Task<IActionResult> PutExercise(int id, Exercise exercise)
+        public async Task<IActionResult> DeleteExercise(int id)
         {
-            if (User.FindFirst("Role")?.Value != "Admin")
-            {
-                return StatusCode(403, new { message = "Từ chối truy cập: Chỉ Giảng viên mới có quyền sửa bài tập." });
-            }
+            var role = User.FindFirst("Role")?.Value ?? User.FindFirst(ClaimTypes.Role)?.Value;
+            if (role != "Admin" && role != "Lecturer")
+                return StatusCode(403, new { message = "Từ chối truy cập: Chỉ Admin hoặc Giảng viên mới có quyền xóa bài tập." });
 
-            // Kiểm tra xem ID truyền trên URL có khớp với ID trong thân JSON không
-            if (id != exercise.Id)
-            {
-                return BadRequest(new { message = "ID bài tập không khớp." });
-            }
+            var exercise = await _context.Exercises.FindAsync(id);
+            if (exercise == null) return NotFound();
 
-            // 💡 CẬP NHẬT MỚI: Nếu Admin sửa bài tập và đổi sang Bài học khác, cũng cần kiểm tra Bài học đó có tồn tại không
-            if (exercise.LessonId <= 0)
+            // 💡 KIỂM TRA BẢO MẬT: Dò ngược từ Bài tập bị xóa
+            if (role == "Lecturer")
             {
-                return BadRequest(new { message = "Vui lòng chọn một Bài học (Lesson) hợp lệ." });
-            }
-            var lessonExists = await _context.Lessons.AnyAsync(l => l.Id == exercise.LessonId);
-            if (!lessonExists)
-            {
-                return BadRequest(new { message = "Bài học này không tồn tại trong hệ thống." });
-            }
+                var lesson = await _context.Lessons.FirstOrDefaultAsync(l => l.Id == exercise.LessonId);
+                var course = lesson != null ? await _context.Courses.FirstOrDefaultAsync(c => c.Id == lesson.CourseId) : null;
+                var currentUser = await GetCurrentUserAsync();
 
-            // Đánh dấu Object này là "Đã bị thay đổi" để Entity Framework lưu đè
-            _context.Entry(exercise).State = EntityState.Modified;
-
-            try
-            {
-                // Lưu xuống SQL Server
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                // Nếu trong quá trình lưu mà phát hiện bài tập này đã bị xóa bởi người khác
-                if (!_context.Exercises.Any(e => e.Id == id))
+                if (course == null || currentUser == null || course.LecturerId != currentUser.Id)
                 {
-                    return NotFound(new { message = "Không tìm thấy bài tập để sửa." });
-                }
-                else
-                {
-                    throw;
+                    return StatusCode(403, new { message = "Bạn không có quyền xóa bài tập của giảng viên khác." });
                 }
             }
 
-            // Trả về mã 204 (No Content) báo hiệu thành công nhưng không cần gửi lại data
+            _context.Exercises.Remove(exercise);
+            await _context.SaveChangesAsync();
+
             return NoContent();
         }
     }

@@ -47,8 +47,17 @@ const StudentDashboard = () => {
   const tabParam = searchParams.get("tab");
   const { user, token } = useAuth();
 
-  // 💡 ĐỔI TÊN STATE CHO TAB ĐỂ KHÔNG ĐỤNG ĐỘ VỚI TABS CỦA LỘ TRÌNH HỌC
   const [mainTab, setMainTab] = useState<"overview" | "reports">(tabParam === "reports" ? "reports" : "overview");
+
+  // 💡 LẮNG NGHE URL ĐỂ TỰ ĐỘNG CHUYỂN TAB KHI BẤM VÀO CHUÔNG
+  useEffect(() => {
+    const currentTab = searchParams.get("tab");
+    if (currentTab === "reports") {
+      setMainTab("reports");
+    } else {
+      setMainTab("overview");
+    }
+  }, [searchParams]);
   
   const [courses, setCourses] = useState<Course[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -108,7 +117,7 @@ const StudentDashboard = () => {
     fetchData();
   }, [user?.email]);
 
-  // 💡 FETCH REPORTS KHI CHUYỂN SANG TAB "GÓC THẮC MẮC"
+  // 💡 FETCH REPORTS KHI CHUYỂN SANG TAB "GÓC THẮC MẮC" HOẶC KHI CÓ PARAM URL MỚI
   useEffect(() => {
     if (mainTab === "reports" && user?.email && token) {
       const fetchMyReports = async () => {
@@ -246,7 +255,7 @@ const StudentDashboard = () => {
                   <TabsTrigger value="library" className="gap-2 text-pink-500 data-[state=active]:text-pink-600"><BookHeart className="h-4 w-4" /> Thư viện AI</TabsTrigger>
                 </TabsList>
 
-                {/* TAB LỘ TRÌNH (Giữ nguyên như cũ) */}
+                {/* TAB LỘ TRÌNH */}
                 <TabsContent value="exercises" className="focus:outline-none">
                   {isLoading ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{Array(3).fill(0).map((_, i) => <div key={i} className="h-64 bg-card rounded-3xl border border-border animate-pulse shadow-card" />)}</div>
@@ -308,13 +317,13 @@ const StudentDashboard = () => {
                   ) : (<div className="bg-card rounded-3xl border-2 border-dashed py-20 text-center"><p>Hệ thống chưa có dữ liệu...</p></div>)}
                 </TabsContent>
 
-                {/* TAB LỊCH SỬ NỘP (Giữ nguyên) */}
+                {/* TAB LỊCH SỬ NỘP */}
                 <TabsContent value="history"><Card><CardContent className="p-0 overflow-x-auto"><Table>
                   <TableHeader><TableRow><TableHead>Mã số</TableHead><TableHead>Tên bài tập</TableHead><TableHead>Thời gian nộp</TableHead><TableHead>Ngôn ngữ</TableHead><TableHead className="text-center">Số Test Cases</TableHead><TableHead className="text-right">Trạng thái</TableHead></TableRow></TableHeader>
                   <TableBody>{submissions.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-12">Chưa có lịch sử nộp bài.</TableCell></TableRow> : submissions.map(sub => <TableRow key={sub.id} className="cursor-pointer hover:bg-muted/30" onClick={() => navigate(`/workspace/${sub.exerciseId}`, { state: { pastCode: sub.code, pastLanguage: sub.language } })}><TableCell>#{sub.id}</TableCell><TableCell className="font-bold">{getExerciseTitle(sub.exerciseId)}</TableCell><TableCell>{new Date(sub.submittedAt).toLocaleString('vi-VN')}</TableCell><TableCell><Badge variant="outline"><Terminal className="h-3 w-3 mr-1" /> {sub.language}</Badge></TableCell><TableCell className="text-center"><span className="font-bold">{sub.passedTests}</span> / {sub.totalTests}</TableCell><TableCell className="text-right">{getStatusBadge(sub.status)}</TableCell></TableRow>)}</TableBody>
                 </Table></CardContent></Card></TabsContent>
 
-                {/* TAB THƯ VIỆN AI (Giữ nguyên) */}
+                {/* TAB THƯ VIỆN AI */}
                 <TabsContent value="library">
                   {savedItems.length === 0 ? <div className="bg-card rounded-3xl border-2 border-dashed py-20 text-center"><BookHeart className="h-12 w-12 mx-auto mb-4 opacity-30" /><h3 className="font-bold mb-2">Thư viện trống!</h3><Button onClick={() => setIsAiModalOpen(true)} variant="outline"><Wand2 className="mr-2 h-4 w-4"/> Bắt đầu tạo bài</Button></div> : 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">{savedItems.map((item, i) => <div key={i} className="group p-5 rounded-2xl bg-card border shadow-card flex flex-col h-full"><div className="flex justify-between mb-3"><Badge variant="outline" className="text-[10px] text-pink-500 border-pink-500/30 bg-pink-500/10">{item.contentType === "Lesson" ? "Bài giảng AI" : "Bài tập AI"}</Badge><div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{new Date(item.savedAt).toLocaleDateString('vi-VN')}</span><button onClick={() => handleDeleteSavedItem(item.id)} className="hover:text-destructive"><Trash2 className="h-4 w-4" /></button></div></div><h3 className="text-lg font-bold mb-2 line-clamp-2">{item.title}</h3><div className="flex gap-2 mb-4 text-xs font-mono text-muted-foreground"><Terminal className="h-3.5 w-3.5" /> {item.language || "N/A"} <span className="bg-muted px-1.5 rounded">Độ khó: {item.difficulty}</span></div><div className="mt-auto">{item.contentType === "Lesson" ? <Button onClick={() => navigate(`/ai-lesson/saved-${item.id}`, { state: { exercise: item, popupLanguage: item.language, savedLessonContent: item.starterCode } })} className="w-full bg-accent/10 text-accent hover:bg-accent border-accent/20"><BookOpen className="mr-2 h-4 w-4" /> Ôn tập lại</Button> : <Button onClick={() => navigate(`/workspace/saved-${item.id}`, { state: { isAIGenerated: true, pastLanguage: item.language, exerciseData: { ...item, testCases: JSON.parse(item.testCases || "[]") } } })} className="w-full"><Code2 className="mr-2 h-4 w-4" /> Giải bài này</Button>}</div></div>)}</div>}
@@ -323,7 +332,7 @@ const StudentDashboard = () => {
             </motion.div>
           ) : (
             
-            /* 💡 TAB MỚI: GÓC THẮC MẮC (LỊCH SỬ BÁO CÁO) */
+            /* TAB: GÓC THẮC MẮC (LỊCH SỬ BÁO CÁO) */
             <motion.div key="reports" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
               <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-border flex items-center justify-between">
@@ -375,58 +384,84 @@ const StudentDashboard = () => {
         </AnimatePresence>
       </main>
 
-      {/* MODAL TẠO BÀI TẬP AI (Giữ nguyên) */}
+      {/* MODAL TẠO BÀI TẬP AI */}
       <Dialog open={isAiModalOpen} onOpenChange={setIsAiModalOpen}>
         <DialogContent className="sm:max-w-[500px]"><DialogHeader><DialogTitle className="flex gap-2"><Sparkles className="h-6 w-6 text-primary" /> AI Tạo Bài Tập</DialogTitle><DialogDescription>Chọn các thông số dưới đây, AI sẽ tạo ra một bài tập hoàn toàn mới.</DialogDescription></DialogHeader><div className="space-y-6 py-4">{genError && <div className="p-3 bg-destructive/10 text-destructive text-sm flex gap-2 border"><AlertCircle className="h-4 w-4" />{genError}</div>}<div className="space-y-3"><label className="text-sm font-bold">Ngôn ngữ lập trình</label><div className="flex flex-wrap gap-2">{["C++", "Python", "Java", "JavaScript"].map(lang => <button key={lang} disabled={isGenerating} onClick={() => setGenLanguage(lang)} className={`px-4 py-2 rounded-lg text-sm font-bold border ${genLanguage === lang ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>{lang}</button>)}</div></div><div className="space-y-3"><label className="text-sm font-bold">Độ khó</label><div className="flex flex-wrap gap-2">{["Cơ bản", "Trung bình", "Nâng cao"].map(diff => <button key={diff} disabled={isGenerating} onClick={() => setGenDifficulty(diff)} className={`px-4 py-2 rounded-lg text-sm font-bold border ${genDifficulty === diff ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>{diff}</button>)}</div></div><div className="space-y-3"><label className="text-sm font-bold">Chủ đề bài tập</label><input type="text" value={genTopic} onChange={e => setGenTopic(e.target.value)} disabled={isGenerating} placeholder="VD: Vòng lặp for..." className="w-full bg-background border px-4 py-3 text-sm rounded-xl outline-none" /></div></div><DialogFooter className="gap-2"><Button variant="outline" onClick={() => setIsAiModalOpen(false)} disabled={isGenerating}>Hủy</Button><Button onClick={handleGenerateAIExercise} disabled={isGenerating} className="bg-primary min-w-[140px]">{isGenerating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Đang tạo...</> : <><Wand2 className="mr-2 h-4 w-4"/> Tạo Bài Tập</>}</Button></DialogFooter></DialogContent>
       </Dialog>
 
-      {/* 💡 POPUP ĐỌC "BÍ KÍP" KHI BẤM XEM TỪ GÓC THẮC MẮC */}
+      {/* 💡 GIAO DIỆN MỚI: SIDE PANEL (NGĂN KÉO TRƯỢT TỪ PHẢI) ĐỂ ĐỌC BÍ KÍP */}
       <AnimatePresence>
         {selectedReport && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex justify-end overflow-hidden">
+            {/* Lớp mờ (Overlay) bấm vào để đóng */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-background rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-border"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setSelectedReport(null)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm cursor-pointer"
+            />
+
+            {/* Khung nội dung chính trượt ra */}
+            <motion.div
+              initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="relative z-10 w-full max-w-md h-full bg-background shadow-[auto_0_40px_rgba(0,0,0,0.15)] border-l border-border flex flex-col"
             >
-              <div className="bg-gradient-to-r from-primary/10 to-primary/5 p-6 relative">
-                <button onClick={() => setSelectedReport(null)} className="absolute top-4 right-4 p-2 rounded-full hover:bg-black/5 text-muted-foreground">
+              {/* Header của Side Panel */}
+              <div className="bg-gradient-to-r from-primary/10 to-primary/5 p-6 relative shrink-0 border-b border-border">
+                <button onClick={() => setSelectedReport(null)} className="absolute top-6 right-6 p-2 rounded-full hover:bg-black/5 text-muted-foreground transition-colors">
                   <X className="h-5 w-5" />
                 </button>
-                <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30 text-white">
-                    <Sparkles className="h-6 w-6" />
+                <div className="flex items-center gap-4">
+                  <div className="h-14 w-14 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-lg shadow-primary/30 text-white shrink-0">
+                    <Sparkles className="h-7 w-7" />
                   </div>
-                  <div>
+                  <div className="pr-6">
                     <h2 className="text-xl font-bold text-foreground">Giải đáp từ Giảng viên</h2>
-                    <p className="text-sm text-muted-foreground mt-0.5">Giảng viên: <span className="font-semibold text-primary">{selectedReport.lecturerName}</span></p>
+                    <p className="text-sm text-muted-foreground mt-1">Giảng viên: <span className="font-semibold text-primary">{selectedReport.lecturerName}</span></p>
                   </div>
                 </div>
               </div>
 
-              <div className="p-6 space-y-5">
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Lỗi bạn gặp phải:</p>
-                  <div className="bg-muted/50 rounded-xl p-4 text-sm text-foreground/80 italic border border-border">
+              {/* Phần nội dung cuộn */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+                
+                {/* Lỗi của sinh viên */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-4 bg-muted-foreground rounded-full"></div>
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Lỗi bạn gặp phải</h3>
+                  </div>
+                  <div className="bg-muted/50 rounded-xl p-4 text-sm text-foreground/80 italic border border-border shadow-inner">
                     "{selectedReport.studentIssue}"
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-primary uppercase tracking-wider">Bí kíp / Lời dặn dò:</p>
-                  <div className="bg-primary/5 rounded-xl p-4 text-sm text-foreground border border-primary/20 leading-relaxed font-medium whitespace-pre-wrap">
+                {/* Bí kíp của giảng viên */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-4 bg-primary rounded-full"></div>
+                    <h3 className="text-sm font-semibold text-primary uppercase tracking-wider">Bí kíp / Lời dặn dò</h3>
+                  </div>
+                  <div className="bg-primary/5 rounded-2xl p-5 text-sm text-foreground border border-primary/20 leading-relaxed font-medium whitespace-pre-wrap shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-primary opacity-20"></div>
                     {selectedReport.lecturerHint}
                   </div>
                 </div>
                 
-                <p className="text-sm text-muted-foreground text-center italic pt-2">
-                  Não của AI đã được cập nhật đoạn "bí kíp" này. Bạn hãy quay lại hỏi AI nhé!
-                </p>
+                {/* Lời nhắn động viên */}
+                <div className="bg-accent/5 border border-accent/10 rounded-xl p-4 mt-6 flex gap-3 items-start">
+                  <Bot className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    Não của AI đã được cập nhật đoạn "bí kíp" này. Bạn hãy quay lại thực hành và hỏi lại AI để xem sự kỳ diệu nhé!
+                  </p>
+                </div>
               </div>
 
-              <div className="p-4 bg-muted/30 border-t border-border flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setSelectedReport(null)}>Đóng lại</Button>
-                <Button onClick={() => navigate(`/workspace?id=${selectedReport.exerciseId}`)} className="bg-gradient-primary shadow-glow px-6">
-                  <Bot className="w-4 h-4 mr-2" /> Trở lại Workspace
+              {/* Footer Button */}
+              <div className="p-5 bg-muted/20 border-t border-border flex justify-end gap-3 shrink-0">
+                <Button variant="outline" onClick={() => setSelectedReport(null)} className="rounded-xl px-4">Đóng lại</Button>
+                <Button onClick={() => navigate(`/workspace?id=${selectedReport.exerciseId}`)} className="bg-gradient-primary shadow-glow rounded-xl px-6">
+                  <Code2 className="w-4 h-4 mr-2" /> Thực hành ngay
                 </Button>
               </div>
             </motion.div>
