@@ -3,19 +3,19 @@ import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge"; 
 import { 
-  Code2, Send, Play, Upload, BrainCircuit, 
-  MessageSquare, Terminal as TerminalIcon, 
-  BookOpen, Loader2, CheckCircle2, XCircle, ListChecks, Code, X,
-  Maximize2, Minimize2, Heart, Flag
+  Code2, Play, Upload, BrainCircuit, 
+  Loader2, Heart
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import { useAuth } from "../hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 
-import ReactMarkdown from "react-markdown"; 
-import remarkGfm from "remark-gfm"; 
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"; 
+
+// 💡 IMPORT CÁC COMPONENT ĐÃ TÁCH
+import LeftPanel from "@/components/workspace/LeftPanel";
+import RightPanel from "@/components/workspace/RightPanel";
 
 interface Exercise {
   id: number;
@@ -456,7 +456,7 @@ const Workspace = () => {
           studentEmail: user.email,
           studentIssue: studentIssue,
           originalAIResponse: originalAIResponse,
-          studentCode: code // 💡 ĐÃ BỔ SUNG CODE CỦA SINH VIÊN VÀO PAYLOAD GỬI LÊN
+          studentCode: code
         })
       });
       const data = await res.json();
@@ -573,128 +573,23 @@ const Workspace = () => {
       {/* Main workspace */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* Left: Lesson + Chat */}
-        <div className={`${isChatExpanded ? "w-[45%]" : "w-[30%]"} min-w-[300px] border-r border-editor-line flex flex-col transition-all duration-300 ease-in-out`}>
-          
-          {/* Lesson content */}
-          {!isChatExpanded && (
-            <div className={`${showChat ? "flex-1" : "flex-[2]"} overflow-auto p-5 border-b border-editor-line`}>
-              <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2 text-primary">
-                    <BookOpen className="h-5 w-5" />
-                    <h2 className="font-semibold text-editor-foreground">Yêu cầu đề bài</h2>
-                  </div>
-                  {!showChat && (
-                      <button onClick={() => setShowChat(true)} className="text-xs flex items-center gap-1 text-primary hover:underline">
-                          <MessageSquare className="h-3.5 w-3.5" /> Mở Chat
-                      </button>
-                  )}
-              </div>
-              
-              <div className="space-y-4 text-sm text-editor-foreground/80 leading-relaxed">
-                {isLoading ? (
-                    <div className="animate-pulse space-y-3">
-                      <div className="h-4 bg-editor-line rounded w-3/4"></div>
-                      <div className="h-4 bg-editor-line rounded w-full"></div>
-                    </div>
-                ) : exercise ? (
-                    <div className="prose prose-sm prose-invert max-w-none text-editor-foreground/80 font-sans">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-                            {exercise.description}
-                        </ReactMarkdown>
-                    </div>
-                ) : (
-                    <p className="text-destructive">Lỗi: Không tải được đề bài.</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Chat Area */}
-          {showChat && (
-            <div className="flex-1 flex flex-col min-h-[250px]">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-editor-line bg-editor-line/10">
-                <div className="flex items-center gap-2 text-sm font-medium text-editor-foreground">
-                  <MessageSquare className="h-4 w-4 text-primary" /> Chat với AI
-                </div>
-                
-                <div className="flex items-center gap-1">
-                  <button 
-                    onClick={() => setIsChatExpanded(!isChatExpanded)}
-                    className="p-1.5 rounded hover:bg-editor-line text-editor-foreground/50 hover:text-primary transition-colors"
-                    title={isChatExpanded ? "Thu nhỏ về bình thường" : "Phóng to cửa sổ Chat"}
-                  >
-                    {isChatExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                  </button>
-                  <button 
-                    onClick={() => { setShowChat(false); setIsChatExpanded(false); }} 
-                    className="p-1.5 rounded hover:bg-editor-line text-editor-foreground/50 hover:text-destructive transition-colors"
-                    title="Đóng Chat"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-              
-              <div className="flex-1 overflow-auto p-4 space-y-3">
-                {chatMessages.map((msg, i) => (
-                  <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                    <div className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-editor-line text-editor-foreground"
-                    }`}>
-                      {msg.role === "assistant" ? (
-                          <div className="prose prose-sm prose-invert max-w-none">
-                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-                                 {msg.content || "..."}
-                             </ReactMarkdown>
-                          </div>
-                      ) : (
-                          msg.content
-                      )}
-                    </div>
-
-                    {msg.role === "assistant" && msg.content && (
-                      <div className="mt-1.5 opacity-60 hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => handleReportAI(msg.content)}
-                          className="text-[11px] flex items-center gap-1.5 text-orange-400 bg-orange-400/10 hover:bg-orange-400/20 px-2 py-1 rounded-md font-medium transition-colors"
-                          title="Báo cáo AI trả lời không tốt"
-                        >
-                          <Flag className="w-3 h-3" /> Cần giảng viên hỗ trợ
-                        </button>
-                      </div>
-                    )}
-
-                  </div>
-                ))}
-                {isChatLoading && (
-                   <div className="flex justify-start">
-                     <div className="bg-editor-line text-editor-foreground rounded-lg px-3 py-2 text-sm flex items-center gap-2">
-                       <Loader2 className="h-4 w-4 animate-spin text-primary" /> Đang soạn câu trả lời...
-                     </div>
-                   </div>
-                )}
-              </div>
-              <div className="p-3 border-t border-editor-line">
-                <div className="flex gap-2 relative">
-                  <input
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder={cooldown > 0 ? `Đợi ${cooldown}s...` : "Hỏi AI về bài tập..."}
-                    disabled={cooldown > 0}
-                    className="flex-1 rounded-lg bg-editor-line px-3 py-2.5 text-sm text-editor-foreground placeholder:text-editor-foreground/30 outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
-                  />
-                  <Button onClick={handleSendMessage} disabled={isChatLoading || cooldown > 0} size="sm" className="bg-gradient-primary text-primary-foreground h-10 w-10 p-0 disabled:opacity-50">
-                     {cooldown > 0 ? <span className="text-xs font-bold">{cooldown}s</span> : <Send className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* SỬ DỤNG LEFT PANEL ĐÃ TÁCH Ở ĐÂY */}
+        <LeftPanel 
+          isChatExpanded={isChatExpanded}
+          setIsChatExpanded={setIsChatExpanded}
+          showChat={showChat}
+          setShowChat={setShowChat}
+          isLoading={isLoading}
+          exercise={exercise}
+          MarkdownComponents={MarkdownComponents}
+          chatMessages={chatMessages}
+          isChatLoading={isChatLoading}
+          chatInput={chatInput}
+          setChatInput={setChatInput}
+          cooldown={cooldown}
+          handleSendMessage={handleSendMessage}
+          handleReportAI={handleReportAI}
+        />
 
         {/* Center: Code Editor */}
         <div className="flex-1 flex flex-col">
@@ -717,123 +612,21 @@ const Workspace = () => {
           />
         </div>
 
-        {/* Right: Output, Grading + AI Feedback */}
-        <div className="w-[30%] min-w-[300px] border-l border-editor-line flex flex-col">
-          <div className="flex border-b border-editor-line">
-            <button
-              onClick={() => setActiveTab("output")}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "output" ? "text-primary border-b-2 border-primary" : "text-editor-foreground/40 hover:text-editor-foreground/60"
-              }`}
-            >
-              <TerminalIcon className="h-4 w-4" /> Output
-            </button>
-            <button
-              onClick={() => setActiveTab("grading")}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "grading" ? "text-success border-b-2 border-success" : "text-editor-foreground/40 hover:text-editor-foreground/60"
-              }`}
-            >
-              <ListChecks className="h-4 w-4" /> Chấm điểm
-            </button>
-            <button
-              onClick={() => setActiveTab("ai")}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "ai" ? "text-primary border-b-2 border-primary" : "text-editor-foreground/40 hover:text-editor-foreground/60"
-              }`}
-            >
-              <BrainCircuit className="h-4 w-4" /> AI Feedback
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-auto p-4 flex flex-col">
-            {activeTab === "output" && (
-              <>
-                <pre className="font-mono text-sm text-editor-foreground/80 whitespace-pre-wrap flex-1">{output}</pre>
-                
-                <div className="mt-4 pt-4 border-t border-editor-line">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-editor-foreground/70 mb-2">
-                    <Code className="h-3.5 w-3.5" /> Dữ liệu đầu vào (Custom Input)
-                  </label>
-                  <textarea 
-                    value={customInput}
-                    onChange={(e) => setCustomInput(e.target.value)}
-                    placeholder="Dùng khi code có hàm input()..."
-                    className="w-full h-24 bg-editor-line border-none rounded-md p-2 text-sm font-mono text-editor-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none"
-                  />
-                </div>
-              </>
-            )}
-
-            {activeTab === "grading" && (
-               <div className="space-y-4">
-                 {!submitResult && !isSubmitting && (
-                   <p className="text-sm text-editor-foreground/60 text-center mt-10">Nhấn nút Nộp bài để xem điểm.</p>
-                 )}
-                 {isSubmitting && (
-                    <div className="flex flex-col items-center mt-10 space-y-3">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                        <span className="text-sm">Đang chạy Test Case...</span>
-                    </div>
-                 )}
-                 {submitResult && submitResult.message && (
-                    <p className="text-sm text-destructive bg-destructive/10 p-3 rounded">{submitResult.message}</p>
-                 )}
-                 {submitResult && !submitResult.message && (
-                    <>
-                       <div className={`p-4 rounded border ${submitResult.status === 'Accepted' ? 'bg-success/10 border-success/30 text-success' : 'bg-destructive/10 border-destructive/30 text-destructive'}`}>
-                           <h3 className="font-bold">{submitResult.status === 'Accepted' ? 'Thành công!' : 'Sai kết quả'}</h3>
-                           <p className="text-sm opacity-90 mt-1">Vượt qua: {submitResult.passedTests}/{submitResult.totalTests} Tests</p>
-                       </div>
-                       <div className="space-y-2 mt-4">
-                           {submitResult.results.map(tc => (
-                               <div key={tc.id} className="p-3 bg-editor-line rounded text-sm">
-                                   <div className="flex items-center gap-2 font-bold">
-                                       {tc.passed ? <CheckCircle2 className="h-4 w-4 text-success"/> : <XCircle className="h-4 w-4 text-destructive"/>}
-                                       Test Case {tc.id}
-                                   </div>
-                                   {!tc.passed && (
-                                       <div className="mt-2 text-xs font-mono bg-editor p-2 rounded">
-                                           <p className="opacity-50">Input:</p>
-                                           <p className="mb-2">{tc.input}</p>
-                                           <p className="text-success opacity-80">Expected:</p>
-                                           <p className="mb-2 text-success">{tc.expectedOutput}</p>
-                                           <p className="text-destructive opacity-80">Your Output:</p>
-                                           <p className="text-destructive">{tc.actualOutput}</p>
-                                       </div>
-                                   )}
-                               </div>
-                           ))}
-                       </div>
-                    </>
-                 )}
-               </div>
-            )}
-
-            {activeTab === "ai" && (
-              <div className="flex flex-col h-full">
-                <div className="flex-1 space-y-4 text-sm prose prose-sm prose-invert max-w-none text-editor-foreground/80">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-                      {aiFeedback}
-                  </ReactMarkdown>
-                </div>
-                
-                {/* 💡 NÚT BÁO CÁO Ở TAB AI FEEDBACK */}
-                {!isAILoading && aiFeedback !== defaultAiFeedback && (
-                  <div className="mt-4 pt-4 border-t border-editor-line/50 opacity-80 hover:opacity-100 transition-opacity flex justify-start">
-                    <button
-                      onClick={() => handleReportAI(aiFeedback)}
-                      className="text-[12px] flex items-center gap-1.5 text-orange-400 bg-orange-400/10 hover:bg-orange-400/20 px-3 py-1.5 rounded-md font-medium transition-colors"
-                      title="Báo cáo AI phân tích chưa chính xác"
-                    >
-                      <Flag className="w-3.5 h-3.5" /> Cần giảng viên hỗ trợ
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        {/* SỬ DỤNG RIGHT PANEL ĐÃ TÁCH Ở ĐÂY */}
+        <RightPanel 
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          output={output}
+          customInput={customInput}
+          setCustomInput={setCustomInput}
+          isSubmitting={isSubmitting}
+          submitResult={submitResult}
+          aiFeedback={aiFeedback}
+          isAILoading={isAILoading}
+          defaultAiFeedback={defaultAiFeedback}
+          MarkdownComponents={MarkdownComponents}
+          handleReportAI={handleReportAI}
+        />
       </div>
     </div>
   );
