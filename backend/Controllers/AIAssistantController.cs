@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -8,6 +9,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System;
 using System.Linq; 
+using Microsoft.EntityFrameworkCore; // Thêm dòng này để hỗ trợ các lệnh Async DB
 using backend.Data;    
 using backend.Models;  
 
@@ -20,14 +22,21 @@ namespace backend.Controllers
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
         private readonly AppDbContext _context; 
+        
+        // Tiêm (Inject) thêm Bộ Não Gemini vào đây
+        private readonly backend.Services.GeminiAssistantService _geminiService;
 
-        public AIAssistantController(HttpClient httpClient, IConfiguration configuration, AppDbContext context)
+        public AIAssistantController(HttpClient httpClient, IConfiguration configuration, AppDbContext context, backend.Services.GeminiAssistantService geminiService)
         {
             _httpClient = httpClient;
             _configuration = configuration;
             _context = context; 
+            _geminiService = geminiService; // Khởi tạo Service
         }
 
+        // ==========================================
+        // CÁC CLASS MODEL YÊU CẦU DỮ LIỆU
+        // ==========================================
         public class ChatMessage
         {
             public string Role { get; set; } = string.Empty;
@@ -81,6 +90,13 @@ namespace backend.Controllers
             public string StudentIssue { get; set; } = string.Empty;
             public string OriginalAIResponse { get; set; } = string.Empty;
             public string StudentCode { get; set; } = string.Empty; 
+        }
+
+        // Model mới cho Trợ lý Gemini Chat (Đã có thêm SessionId)
+        public class GeminiChatRequest
+        {
+            public int? SessionId { get; set; } 
+            public string Message { get; set; } = string.Empty;
         }
 
         private string StripHTML(string input)
@@ -556,6 +572,134 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
                 .ToList();
 
             return Ok(new { success = true, data = reports });
+        }
+
+        // =================================================================
+        // API 8: TRỢ LÝ GEMINI CHAT (CÓ LƯU LỊCH SỬ VÀO DATABASE)
+        // =================================================================
+        [HttpPost("gemini-chat")]
+        [Authorize(Roles = "Admin,Lecturer")]
+        public async Task<IActionResult> GeminiChat([FromBody] GeminiChatRequest request)
+        {
+            try
+            {
+                var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+                var claimNameId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                var claimEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+                if (string.IsNullOrEmpty(userRole))
+                    return Unauthorized(new { success = false, message = "Không xác định được danh tính." });
+
+                int userId = 0;
+                if (int.TryParse(claimNameId, out int parsedId)) userId = parsedId;
+                else 
+                {
+                    string emailToFind = claimEmail ?? claimNameId;
+                    if (!string.IsNullOrEmpty(emailToFind))
+                    {
+                        var userDb = await _context.Users.FirstOrDefaultAsync(u => u.Email == emailToFind);
+                        if (userDb != null) userId = userDb.Id;
+                    }
+                }
+
+                // 1. Xử lý Session (Phiên chat)
+                int currentSessionId = request.SessionId ?? 0;
+                GeminiSession session;
+
+                if (currentSessionId == 0)
+                {
+                    // Tạo phiên chat mới, lấy tối đa 30 ký tự đầu làm Tiêu đề
+                    string title = request.Message.Length > 30 ? request.Message.Substring(0, 30) + "..." : request.Message;
+                    session = new GeminiSession { UserId = userId, Title = title };
+                    _context.GeminiSessions.Add(session);
+                    await _context.SaveChangesAsync();
+                    currentSessionId = session.Id;
+                }
+                else
+                {
+                    session = await _context.GeminiSessions.FindAsync(currentSessionId);
+                    if (session == null || session.UserId != userId) return NotFound(new { success = false, message = "Không tìm thấy đoạn chat." });
+                }
+
+                // 2. Lưu tin nhắn của User vào DB
+                var userMsg = new GeminiMessage { SessionId = currentSessionId, Role = "user", Content = request.Message };
+                _context.GeminiMessages.Add(userMsg);
+                await _context.SaveChangesAsync();
+
+                // 3. Gọi AI xử lý (GeminiAssistantService)
+                var reply = await _geminiService.ProcessGeminiChatAsync(userRole, userId, request.Message);
+
+                // 4. Lưu tin nhắn của AI vào DB
+                var aiMsg = new GeminiMessage { SessionId = currentSessionId, Role = "ai", Content = reply };
+                _context.GeminiMessages.Add(aiMsg);
+                
+                session.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { success = true, reply = reply, sessionId = currentSessionId });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = ex.Message });
+            }
+        }
+
+        // =================================================================
+        // API 9: LẤY DANH SÁCH CÁC ĐOẠN CHAT (CỘT BÊN TRÁI)
+        // =================================================================
+        [HttpGet("gemini-sessions")]
+        [Authorize(Roles = "Admin,Lecturer")]
+        public async Task<IActionResult> GetGeminiSessions()
+        {
+            var claimNameId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var claimEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+            int userId = 0;
+            if (int.TryParse(claimNameId, out int parsedId)) userId = parsedId;
+            else 
+            {
+                var userDb = await _context.Users.FirstOrDefaultAsync(u => u.Email == (claimEmail ?? claimNameId));
+                if (userDb != null) userId = userDb.Id;
+            }
+
+            var sessions = await _context.GeminiSessions
+                .Where(s => s.UserId == userId)
+                .OrderByDescending(s => s.UpdatedAt)
+                .Select(s => new { s.Id, s.Title, s.UpdatedAt })
+                .ToListAsync();
+
+            return Ok(new { success = true, data = sessions });
+        }
+
+        // =================================================================
+        // API 10: LẤY CHI TIẾT TIN NHẮN TRONG 1 ĐOẠN CHAT (KHUNG BÊN PHẢI)
+        // =================================================================
+        [HttpGet("gemini-sessions/{id}/messages")]
+        [Authorize(Roles = "Admin,Lecturer")]
+        public async Task<IActionResult> GetSessionMessages(int id)
+        {
+            var messages = await _context.GeminiMessages
+                .Where(m => m.SessionId == id)
+                .OrderBy(m => m.CreatedAt)
+                .Select(m => new { m.Id, m.Role, text = m.Content }) 
+                .ToListAsync();
+
+            return Ok(new { success = true, data = messages });
+        }
+
+        // =================================================================
+        // API 11: XÓA ĐOẠN CHAT
+        // =================================================================
+        [HttpDelete("gemini-sessions/{id}")]
+        [Authorize(Roles = "Admin,Lecturer")]
+        public async Task<IActionResult> DeleteSession(int id)
+        {
+            var session = await _context.GeminiSessions.FindAsync(id);
+            if (session != null)
+            {
+                _context.GeminiSessions.Remove(session);
+                await _context.SaveChangesAsync();
+            }
+            return Ok(new { success = true });
         }
     }
 }

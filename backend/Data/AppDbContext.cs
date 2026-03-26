@@ -21,6 +21,9 @@ namespace backend.Data
         // BẢNG MỚI: LƯU TRỮ BÍ KÍP RAG CỦA GIẢNG VIÊN & THÔNG BÁO CHO SINH VIÊN
         public DbSet<AICorrection> AICorrections { get; set; }
 
+        public DbSet<GeminiSession> GeminiSessions { get; set; }
+        public DbSet<GeminiMessage> GeminiMessages { get; set; }
+
         public DbSet<Redemption> Redemptions { get; set; }
 
         // Hàm này giữ lại nhưng để trống, dành cho các cấu hình nâng cao sau này nếu cần

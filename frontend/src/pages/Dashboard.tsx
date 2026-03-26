@@ -23,6 +23,9 @@ import ExerciseModal from "../components/dashboard/ExerciseModal";
 import RoleDialog from "../components/dashboard/RoleDialog";
 import DeleteConfirmDialog from "../components/dashboard/DeleteConfirmDialog";
 
+// 🚀 Tích hợp Trợ lý Gemini Sidebar
+import GeminiSidebar from "../components/dashboard/GeminiSidebar";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const Dashboard = () => {
@@ -130,12 +133,12 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
             { label: "Bài tập", value: exercises.length, icon: BookOpen, color: "text-primary" },
-            { label: "Người dùng", value: studentStats.length, icon: Users, color: "text-accent" },
-            { label: "Bài nộp đúng", value: studentStats.reduce((sum, s) => sum + s.completedExercises, 0), icon: Trophy, color: "text-success" },
-            { label: "Trạng thái", value: "Online", icon: TrendingUp, color: "text-warning" },
+            { label: "Người dùng", value: studentStats.length, icon: Users, color: "text-primary" },
+            { label: "Bài nộp đúng", value: studentStats.reduce((sum, s) => sum + s.completedExercises, 0), icon: Trophy, color: "text-primary" },
+            { label: "Trạng thái", value: "Online", icon: TrendingUp, color: "text-primary" },
           ].map((stat, i) => (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-              <Card><CardContent className="p-5 flex gap-4"><div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-muted ${stat.color}`}><stat.icon className="h-6 w-6" /></div><div><p className="text-sm text-muted-foreground">{stat.label}</p><p className="text-xl font-bold">{stat.value}</p></div></CardContent></Card>
+              <Card><CardContent className="p-5 flex gap-4"><div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 ${stat.color}`}><stat.icon className="h-6 w-6" /></div><div><p className="text-sm text-muted-foreground">{stat.label}</p><p className="text-xl font-bold">{stat.value}</p></div></CardContent></Card>
             </motion.div>
           ))}
         </div>
@@ -161,6 +164,9 @@ const Dashboard = () => {
       <ExerciseModal open={showAddExercise} setOpen={setShowAddExercise} isEdit={isEditModeEx} ex={newExercise} setEx={setNewExercise} courses={courses} lessons={lessons} user={user} effectiveUserId={effectiveUserId} selectedCourseId={selectedCourseIdEx} setSelectedCourseId={setSelectedCourseIdEx} testCases={testCases} addTestCase={addTC} updateTestCase={upTC} removeTestCase={rmTC} onSave={handleSaveExercise} isSubmitting={isSubmitting} />
       <RoleDialog open={showRoleDialog} setOpen={setShowRoleDialog} targetUser={roleTargetUser} role={selectedNewRole} setRole={setSelectedNewRole} onSubmit={submitRoleChange} isSubmitting={isSubmitting} />
       <DeleteConfirmDialog open={deleteConfirm.isOpen} setOpen={(open:boolean) => setDeleteConfirm(p => ({...p, isOpen: open}))} info={deleteConfirm} onConfirm={executeDelete} isSubmitting={isSubmitting} />
+
+      {/* 🚀 ĐÂY LÀ CHỖ GỌI SIÊU PHẨM TRỢ LÝ GEMINI */}
+      <GeminiSidebar />
     </div>
   );
 };

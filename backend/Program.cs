@@ -48,6 +48,10 @@ builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Đăng ký HttpClient và Service AI Copilot
+builder.Services.AddHttpClient<backend.Services.GeminiAssistantService>();
+builder.Services.AddScoped<backend.Services.GeminiAssistantService>();
+
 // ==========================================
 // 4. MỞ KHÓA CORS CHO FRONTEND (CẬP NHẬT)
 // ==========================================

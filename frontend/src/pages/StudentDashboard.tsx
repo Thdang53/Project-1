@@ -252,7 +252,7 @@ const StudentDashboard = () => {
                 <TabsList className="bg-card border border-border">
                   <TabsTrigger value="exercises" className="gap-2"><BookOpen className="h-4 w-4" /> Lộ trình học</TabsTrigger>
                   <TabsTrigger value="history" className="gap-2"><History className="h-4 w-4" /> Lịch sử nộp</TabsTrigger>
-                  <TabsTrigger value="library" className="gap-2 text-pink-500 data-[state=active]:text-pink-600"><BookHeart className="h-4 w-4" /> Thư viện AI</TabsTrigger>
+                  <TabsTrigger value="library" className="gap-2"><BookHeart className="h-4 w-4" /> Thư viện AI</TabsTrigger>
                 </TabsList>
 
                 {/* TAB LỘ TRÌNH */}

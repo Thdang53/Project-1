@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge"; 
-import { Code2, LogIn, LogOut, User, Bell, CheckCircle2, MessageSquareText, BookOpen } from "lucide-react";
+import { Code2, LogOut, User, Bell, CheckCircle2, MessageSquareText, BookOpen } from "lucide-react";
 import { useAuth } from "../hooks/useAuth"; 
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -75,7 +75,7 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
       } catch (e) {}
     }
 
-    // 💡 CHUYỂN HƯỚNG SANG TRANG DASHBOARD, TAB "REPORTS" (GÓC THẮC MẮC)
+    // CHUYỂN HƯỚNG SANG TRANG DASHBOARD, TAB "REPORTS"
     navigate(`/student-dashboard?tab=reports&reportId=${notif.id}`);
   };
 
@@ -100,7 +100,7 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
           </span>
         </Link>
 
-        {/* CÁC MENU ĐIỀU HƯỚNG */}
+        {/* CÁC MENU ĐIỀU HƯỚNG (ĐÃ ĐỒNG BỘ MÀU 100%) */}
         <div className="hidden md:flex items-center gap-8">
           <Link to="/" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
             Trang chủ
@@ -110,7 +110,6 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
             Không gian học tập
           </Link>
           
-          {/* 💡 HIỂN THỊ CÁC NÚT QUẢN LÝ DỰA TRÊN ROLE */}
           {(user?.role === "Lecturer" || user?.role === "Admin") && (
             <>
               <Link to="/lecturer-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
@@ -207,9 +206,16 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
                         <p className="text-xs text-gray-500 truncate mt-1">{user.email}</p>
                       </div>
                       <div className="p-1">
-                        <button onClick={handleLogout} className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg">
+                        
+                        {/* 💡 NÚT HỒ SƠ ĐÃ ĐƯỢC KHÔI PHỤC VÀO ĐÂY */}
+                        <Link to="/profile" className="w-full text-left flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors">
+                          <User className="h-4 w-4" /> Hồ sơ cá nhân
+                        </Link>
+                        
+                        <button onClick={handleLogout} className="w-full text-left flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors mt-0.5">
                           <LogOut className="h-4 w-4" /> Đăng xuất
                         </button>
+                        
                       </div>
                     </motion.div>
                   )}
