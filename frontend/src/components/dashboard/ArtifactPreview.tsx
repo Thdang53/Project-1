@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { Code2, Copy, Download, X, Check, FileCode } from "lucide-react";
+import { Copy, Download, X, Check, FileCode, Bot } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { motion } from "framer-motion";
-import { cn } from "../../lib/utils";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-// Interface để nhận data từ GeminiSidebar truyền vào
+// 🚀 Đã cập nhật Interface để nhận dữ liệu THẬT từ Gemini
 interface ArtifactPreviewProps {
   open: boolean;
   onClose: () => void;
@@ -19,7 +20,7 @@ interface ArtifactPreviewProps {
 const ArtifactPreview = ({ open, onClose, data }: ArtifactPreviewProps) => {
   const [copied, setCopied] = useState(false);
 
-  // Tách dòng từ code thật
+  // Tính toán số dòng từ dữ liệu thật
   const lines = data.content.split("\n");
 
   const handleCopy = () => {
@@ -28,19 +29,33 @@ const ArtifactPreview = ({ open, onClose, data }: ArtifactPreviewProps) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Chuẩn hóa tên ngôn ngữ
+  const getLanguage = (type: string) => {
+    const t = type.toLowerCase();
+    if (t === 'py') return 'python';
+    if (t === 'js') return 'javascript';
+    if (t === 'cs') return 'csharp';
+    return t; 
+  };
+
+  const getExtension = (lang: string) => {
+    if (lang === "python") return "py";
+    if (lang === "json") return "json";
+    if (lang === "javascript") return "js";
+    if (lang === "cpp") return "cpp";
+    if (lang === "java") return "java";
+    if (lang === "csharp") return "cs";
+    return "txt";
+  };
+
   const handleDownload = () => {
     const blob = new Blob([data.content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     
-    // Tự động nhận diện đuôi file
-    let extension = "txt";
-    if (data.type.toLowerCase() === "python" || data.type.toLowerCase() === "py") extension = "py";
-    else if (data.type.toLowerCase() === "json") extension = "json";
-    else if (data.type.toLowerCase() === "javascript" || data.type.toLowerCase() === "js") extension = "js";
-    else if (data.type.toLowerCase() === "cpp") extension = "cpp";
-    else if (data.type.toLowerCase() === "java") extension = "java";
+    const lang = getLanguage(data.type);
+    const extension = getExtension(lang);
 
     a.download = `artifact_${Date.now()}.${extension}`;
     a.click();
@@ -51,25 +66,26 @@ const ArtifactPreview = ({ open, onClose, data }: ArtifactPreviewProps) => {
 
   return (
     <motion.div
-      initial={{ x: "100%", opacity: 0.5 }}
+      initial={{ x: "100%", opacity: 0.8 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: "100%", opacity: 0 }}
-      transition={{ type: "spring", damping: 30, stiffness: 300 }}
-      className="flex flex-col h-full w-[45%] min-w-[400px] max-w-[800px] border-l border-border/60 bg-background shadow-[-8px_0_30px_-12px_rgba(0,0,0,0.12)] z-50 absolute right-0 top-0 bottom-0"
+      transition={{ ease: "easeOut", duration: 0.3 }}
+      className="flex flex-col h-full w-[45%] min-w-[420px] border-l border-slate-200/80 bg-white shadow-[-12px_0_40px_-15px_rgba(0,0,0,0.08)] absolute right-0 top-0 bottom-0 z-50"
     >
       {/* ── Header ─────────────────────────────────── */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/50 bg-background/80 px-4 backdrop-blur-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
-            <FileCode className="h-4.5 w-4.5 text-primary" />
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-sm px-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <FileCode className="h-4 w-4 text-primary" />
           </div>
-          <span className="text-sm font-semibold tracking-tight text-foreground">
+          <span className="text-sm font-semibold tracking-tight text-slate-900">
             Artifact Preview
           </span>
           <Badge
             variant="secondary"
-            className="rounded-md px-2 py-0 text-[10px] font-bold uppercase tracking-wider ml-2"
+            className="rounded-md bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 border-0"
           >
+            {/* Đổi ngôn ngữ hiển thị động */}
             {data.type}
           </Badge>
         </div>
@@ -78,137 +94,86 @@ const ArtifactPreview = ({ open, onClose, data }: ArtifactPreviewProps) => {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all duration-150"
             onClick={handleCopy}
             title="Copy Code"
           >
-            {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+            {copied ? (
+              <Check className="h-4 w-4 text-emerald-500" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all duration-150"
             onClick={handleDownload}
-            title="Download"
+            title="Download File"
           >
             <Download className="h-4 w-4" />
           </Button>
-          <div className="mx-1 h-4 w-px bg-border/60" />
+          <div className="mx-1.5 h-4 w-px bg-slate-200" />
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all duration-150"
             onClick={onClose}
           >
-            <X className="h-4.5 w-4.5" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
       </header>
 
       {/* ── Code Editor Area ───────────────────────── */}
-      <ScrollArea className="flex-1 bg-[#0d1117] w-full">
-        <div className="min-w-max min-h-full">
-          <pre className="p-0 m-0">
-            <code className="block text-[13px] leading-[1.7] font-mono">
-              {lines.map((line, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "flex hover:bg-white/[0.04] transition-colors duration-100",
-                    i === 0 && "pt-4",
-                    i === lines.length - 1 && "pb-4"
-                  )}
-                >
-                  {/* Gutter (Số dòng) */}
-                  <span className="sticky left-0 w-12 shrink-0 select-none bg-[#0d1117] pr-3 text-right text-[12px] leading-[1.7] text-[#484f58] font-mono">
-                    {i + 1}
-                  </span>
-                  {/* Code line */}
-                  <span className="flex-1 px-4 text-[#e6edf3] whitespace-pre">
-                    {/* Nếu file là JSON, không dùng highlight vì regex highlight ở dưới đang viết cho Python. Render text thuần */}
-                    {data.type.toLowerCase() === "json" ? line : highlightLine(line)}
-                  </span>
-                </div>
-              ))}
-            </code>
-          </pre>
-        </div>
+      <ScrollArea className="flex-1 bg-slate-50">
+        <SyntaxHighlighter
+          // Truyền ngôn ngữ động vào để nhận diện màu sắc
+          language={getLanguage(data.type)}
+          style={oneLight}
+          showLineNumbers
+          wrapLines
+          lineNumberStyle={{
+            minWidth: "3em",
+            paddingRight: "1.2em",
+            color: "#c1c7cd",
+            fontSize: "12px",
+            userSelect: "none",
+            textAlign: "right",
+          }}
+          customStyle={{
+            margin: 0,
+            padding: "1.25rem 0",
+            background: "transparent",
+            fontSize: "13px",
+            lineHeight: "1.75",
+            fontFamily: "'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+          }}
+          codeTagProps={{
+            style: {
+              fontFamily: "'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+            },
+          }}
+        >
+          {/* Đổ dữ liệu thật vào */}
+          {data.content}
+        </SyntaxHighlighter>
       </ScrollArea>
 
       {/* ── Footer ─────────────────────────────────── */}
-      <div className="flex h-9 shrink-0 items-center justify-between border-t border-border/40 bg-[#0d1117] px-4">
-        <span className="text-[11px] font-mono text-[#484f58] flex items-center gap-2">
-           <Code2 className="h-3.5 w-3.5" /> preview_file.{data.type.toLowerCase()}
+      <div className="flex h-8 shrink-0 items-center justify-between border-t border-slate-100 bg-slate-100/60 px-5">
+        <span className="text-[11px] font-mono text-slate-400">
+          preview_file.{getExtension(getLanguage(data.type))}
         </span>
-        <span className="text-[11px] font-mono text-[#484f58]">
-          {lines.length} lines · UTF-8
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-mono text-slate-400">
+            {lines.length} lines · UTF-8
+          </span>
+          <Bot className="h-3 w-3 text-slate-300" />
+        </div>
       </div>
     </motion.div>
   );
 };
-
-/* ── Minimal Syntax Highlighting (Cho code giống Hacker) ───────────────────── */
-function highlightLine(line: string): React.ReactNode {
-  if (line.trimStart().startsWith("#") || line.trimStart().startsWith("//")) {
-    return <span className="text-[#8b949e] italic">{line}</span>;
-  }
-  if (line.trimStart().startsWith('"""') || line.trimStart().startsWith("'''")) {
-    return <span className="text-[#a5d6ff]">{line}</span>;
-  }
-
-  const parts: React.ReactNode[] = [];
-  const keywords = /\b(import|from|def|return|if|else|print|as|class|for|in|and|or|not|True|False|None|let|const|var|function|public|private)\b/g;
-  const strings = /(["'])(?:(?=(\\?))\2.)*?\1/g;
-  const numbers = /\b(\d+\.?\d*)\b/g;
-  const builtins = /\b(len|range|int|str|float|list|dict|set|type|open|super|self|console|Math)\b/g;
-
-  let result = line;
-  const tokens: { start: number; end: number; cls: string }[] = [];
-
-  let m: RegExpExecArray | null;
-  
-  // Keyword (Màu đỏ/hồng)
-  while ((m = keywords.exec(result)) !== null) {
-    tokens.push({ start: m.index, end: m.index + m[0].length, cls: "text-[#ff7b72]" });
-  }
-  // String (Màu xanh biển nhạt)
-  while ((m = strings.exec(result)) !== null) {
-    tokens.push({ start: m.index, end: m.index + m[0].length, cls: "text-[#a5d6ff]" });
-  }
-  // Number (Màu xanh lơ)
-  while ((m = numbers.exec(result)) !== null) {
-    tokens.push({ start: m.index, end: m.index + m[0].length, cls: "text-[#79c0ff]" });
-  }
-  // Built-in functions (Màu tím)
-  while ((m = builtins.exec(result)) !== null) {
-    tokens.push({ start: m.index, end: m.index + m[0].length, cls: "text-[#d2a8ff]" });
-  }
-
-  if (tokens.length === 0) return line;
-
-  tokens.sort((a, b) => a.start - b.start);
-
-  const clean: typeof tokens = [];
-  for (const t of tokens) {
-    if (clean.length === 0 || t.start >= clean[clean.length - 1].end) {
-      clean.push(t);
-    }
-  }
-
-  let last = 0;
-  for (const t of clean) {
-    if (t.start > last) parts.push(result.slice(last, t.start));
-    parts.push(
-      <span key={t.start} className={t.cls}>
-        {result.slice(t.start, t.end)}
-      </span>
-    );
-    last = t.end;
-  }
-  if (last < result.length) parts.push(result.slice(last));
-
-  return <>{parts}</>;
-}
 
 export default ArtifactPreview;

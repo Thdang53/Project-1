@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import {
   Sparkles, Bot, Send, User, X, PanelLeftClose, PanelLeftOpen,
   Plus, Trash2, MessageSquare, Code2,
 } from "lucide-react";
-import ArtifactPreview from "./ArtifactPreview"; // Đảm bảo bạn đã có file ArtifactPreview.tsx cùng thư mục hoặc chỉnh lại đường dẫn cho đúng!
+import ArtifactPreview from "./ArtifactPreview"; 
 import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
@@ -64,6 +64,86 @@ const TypingIndicator = () => (
   </div>
 );
 
+// 🚀 ĐÃ DỜI CHAT BUBBLE RA NGOÀI ĐỂ TRỊ DỨT ĐIỂM CHỨNG GIẬT MÀN HÌNH
+interface ChatBubbleProps {
+  msg: Message;
+  onOpenArtifact: (type: string, content: string) => void;
+}
+
+const ChatBubble = ({ msg, onOpenArtifact }: ChatBubbleProps) => {
+  const isUser = msg.role === "user";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className={cn("flex items-start gap-3 w-full", isUser && "ml-auto flex-row-reverse")}
+    >
+      <Avatar className="h-8 w-8 shrink-0 mt-1 border border-border/50">
+        <AvatarFallback
+          className={cn(
+            isUser ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"
+          )}
+        >
+          {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+        </AvatarFallback>
+      </Avatar>
+      
+      <div
+        className={cn(
+          "px-5 py-3.5 text-[15px] leading-relaxed overflow-hidden prose prose-sm shadow-sm",
+          isUser
+            ? "max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tr-sm bg-primary text-primary-foreground prose-invert text-white"
+            : "w-full max-w-full rounded-2xl rounded-tl-sm border border-border/60 bg-muted/60 text-foreground backdrop-blur-sm dark:prose-invert"
+        )}
+      >
+        <ReactMarkdown 
+          remarkPlugins={[remarkGfm]}
+          components={{
+            p: ({node, ...props}) => <p className="mb-2.5 last:mb-0" {...props} />,
+            ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
+            ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1" {...props} />,
+            li: ({node, ...props}) => <li className="" {...props} />,
+            strong: ({node, ...props}) => <strong className="font-semibold" {...props} />,
+            
+            code: ({node, inline, className, children, ...props}: any) => {
+              const match = /language-(\w+)/.exec(className || '');
+              const codeString = String(children).replace(/\n$/, '');
+              
+              if (!inline && match) {
+                 const type = match[1];
+                 return (
+                   <div className="my-4 p-4 border border-slate-200 bg-white rounded-xl flex items-center justify-between shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                          <Code2 className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-800 m-0 leading-none">Mã nguồn / Dữ liệu</p>
+                          <p className="text-xs text-slate-500 m-0 mt-1">Định dạng: {type.toUpperCase()}</p>
+                        </div>
+                      </div>
+                      <Button 
+                        onClick={() => onOpenArtifact(type, codeString)}
+                        className="bg-primary hover:bg-primary/90 text-white shadow-md transition-all duration-200"
+                      >
+                        Xem Báo Cáo
+                      </Button>
+                   </div>
+                 );
+              }
+
+              return <code className="bg-slate-200/50 px-1.5 py-0.5 rounded text-[13px] font-mono text-slate-800" {...props}>{children}</code>;
+            },
+          }}
+        >
+          {msg.text}
+        </ReactMarkdown>
+      </div>
+    </motion.div>
+  );
+};
+
 /* ------------------------------------------------------------------ */
 /* Main Component                                                    */
 /* ------------------------------------------------------------------ */
@@ -74,7 +154,6 @@ const GeminiSidebar = () => {
   const [open, setOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
-  // Logic kết nối API Backend
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -82,14 +161,12 @@ const GeminiSidebar = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [hoveredSession, setHoveredSession] = useState<number | null>(null);
   
-  // State quản lý Artifact
   const [artifactOpen, setArtifactOpen] = useState(false);
   const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  /* Load Sessions từ API */
   const loadSessions = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/AIAssistant/gemini-sessions`, {
@@ -104,7 +181,6 @@ const GeminiSidebar = () => {
     }
   }, [token]);
 
-  /* Mở modal -> Load dữ liệu */
   useEffect(() => {
     if (open && user) {
       loadSessions();
@@ -114,15 +190,13 @@ const GeminiSidebar = () => {
     }
   }, [open, user, loadSessions]);
 
-  /* auto-scroll */
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }
   }, [messages, isTyping]);
 
-  /* auto-resize textarea */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + "px";
@@ -223,92 +297,15 @@ const GeminiSidebar = () => {
     }
   };
 
-  // Component hiển thị bong bóng chat (Nhúng Markdown và Logic Bắt Artifact)
-  const ChatBubble = ({ msg }: { msg: Message }) => {
-    const isUser = msg.role === "user";
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-        className={cn("flex items-start gap-3 w-full", isUser && "ml-auto flex-row-reverse")}
-      >
-        <Avatar className="h-8 w-8 shrink-0 mt-1 border border-border/50">
-          <AvatarFallback
-            className={cn(
-              isUser ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"
-            )}
-          >
-            {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-          </AvatarFallback>
-        </Avatar>
-        
-        <div
-          className={cn(
-            "px-5 py-3.5 text-[15px] leading-relaxed overflow-hidden prose prose-sm shadow-sm",
-            isUser
-              ? "max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tr-sm bg-primary text-primary-foreground prose-invert text-white"
-              : "w-full max-w-full rounded-2xl rounded-tl-sm border border-border/60 bg-muted/60 text-foreground backdrop-blur-sm dark:prose-invert"
-          )}
-        >
-          <ReactMarkdown 
-            remarkPlugins={[remarkGfm]}
-            components={{
-              p: ({node, ...props}) => <p className="mb-2.5 last:mb-0" {...props} />,
-              ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
-              ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1" {...props} />,
-              li: ({node, ...props}) => <li className="" {...props} />,
-              strong: ({node, ...props}) => <strong className="font-semibold" {...props} />,
-              code: ({node, inline, className, children, ...props}: any) => {
-                const match = /language-(\w+)/.exec(className || '');
-                const codeString = String(children).replace(/\n$/, '');
-                
-                // 🌟 BẮT SÓNG ARTIFACTS
-                if (!inline && match && codeString.includes("artifact=")) {
-                   const type = match[1];
-                   return (
-                     <div className="my-4 p-4 border border-primary/30 bg-primary/5 rounded-xl flex items-center justify-between shadow-sm">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
-                            <Code2 className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-foreground m-0 leading-none">Artifact Content</p>
-                            <p className="text-xs text-muted-foreground m-0 mt-1">Định dạng: {type.toUpperCase()}</p>
-                          </div>
-                        </div>
-                        <Button 
-                          onClick={() => {
-                            const cleanContent = codeString.split('\n').slice(1).join('\n');
-                            setCurrentArtifact({ type, content: cleanContent });
-                            setArtifactOpen(true);
-                            if (window.innerWidth < 1024) setSidebarOpen(false); 
-                          }}
-                          className="bg-primary hover:bg-primary/90 text-white"
-                        >
-                          Xem Báo Cáo
-                        </Button>
-                     </div>
-                   );
-                }
-
-                // Code bình thường
-                return inline 
-                  ? <code className="bg-background/80 px-1.5 py-0.5 rounded text-[13px] font-mono text-primary" {...props}>{children}</code>
-                  : <div className="bg-zinc-950 text-zinc-50 rounded-lg p-4 my-3 overflow-x-auto text-[13px] font-mono shadow-inner"><code {...props}>{children}</code></div>;
-              },
-            }}
-          >
-            {msg.text}
-          </ReactMarkdown>
-        </div>
-      </motion.div>
-    );
-  };
+  // Hàm xử lý mở Artifact truyền xuống ChatBubble
+  const handleOpenArtifact = useCallback((type: string, content: string) => {
+    setCurrentArtifact({ type, content });
+    setArtifactOpen(true);
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  }, []);
 
   return (
     <>
-      {/* ---- FAB ---- */}
       <motion.button
         onClick={() => setOpen(true)}
         className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-shadow"
@@ -318,7 +315,6 @@ const GeminiSidebar = () => {
         <Sparkles className="h-6 w-6" />
       </motion.button>
 
-      {/* ---- Full-Screen Overlay ---- */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -329,7 +325,6 @@ const GeminiSidebar = () => {
             transition={{ duration: 0.25 }}
             className="fixed inset-0 z-[100] flex bg-background/95 backdrop-blur-xl"
           >
-            {/* ========= LEFT SIDEBAR ========= */}
             <AnimatePresence initial={false}>
               {sidebarOpen && (
                 <motion.aside
@@ -341,7 +336,6 @@ const GeminiSidebar = () => {
                   className="hidden md:flex flex-col h-full border-r border-border/50 bg-muted/30 overflow-hidden"
                 >
                   <div className="flex flex-col h-full w-[280px]">
-                    {/* New Chat */}
                     <div className="p-3">
                       <Button
                         onClick={startNewChat}
@@ -353,7 +347,6 @@ const GeminiSidebar = () => {
                       </Button>
                     </div>
 
-                    {/* History */}
                     <ScrollArea className="flex-1 px-2">
                       <div className="flex flex-col gap-0.5 pb-4">
                         {sessions.map((session) => (
@@ -399,9 +392,7 @@ const GeminiSidebar = () => {
               )}
             </AnimatePresence>
 
-            {/* ========= RIGHT MAIN AREA (KHUNG CHAT) ========= */}
             <div className="flex flex-1 flex-col min-w-0 transition-all duration-300">
-              {/* Header */}
               <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/50 px-4 backdrop-blur-sm bg-background/80">
                 <div className="flex items-center gap-2">
                   <Button
@@ -424,7 +415,6 @@ const GeminiSidebar = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                   {/* Nếu có Artifact, hiện nút mở lại Artifact. Không thì hiện nút X để đóng toàn bộ */}
                    {currentArtifact && !artifactOpen && (
                       <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg" onClick={() => setArtifactOpen(true)}>
                         <Code2 className="h-4.5 w-4.5 text-primary" />
@@ -438,10 +428,9 @@ const GeminiSidebar = () => {
                 </div>
               </header>
 
-              {/* Messages */}
               <div ref={scrollRef} className="flex-1 overflow-y-auto">
                 <div className="mx-auto w-full max-w-4xl flex flex-col gap-5 px-4 py-6">
-                  {messages.length === 1 && !isTyping && (
+                  {messages.length === 0 && !isTyping && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -457,8 +446,9 @@ const GeminiSidebar = () => {
                     </motion.div>
                   )}
                   <AnimatePresence initial={false}>
+                    {/* TRUYỀN HÀM XUỐNG CHAT BUBBLE Ở ĐÂY */}
                     {messages.map((msg) => (
-                      <ChatBubble key={msg.id} msg={msg} />
+                      <ChatBubble key={msg.id} msg={msg} onOpenArtifact={handleOpenArtifact} />
                     ))}
                   </AnimatePresence>
                   {isTyping && <TypingIndicator />}
@@ -466,7 +456,6 @@ const GeminiSidebar = () => {
                 </div>
               </div>
 
-              {/* Input Area */}
               <div className="shrink-0 border-t border-border/30 bg-background/80 backdrop-blur-sm">
                 <div className="mx-auto max-w-4xl px-4 py-3">
                   <form
@@ -474,7 +463,7 @@ const GeminiSidebar = () => {
                       e.preventDefault();
                       handleSend();
                     }}
-                    className="relative flex items-end gap-2 rounded-2xl border border-border/60 bg-muted/40 px-4 py-2 shadow-sm focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-all"
+                    className="relative flex items-end gap-2 rounded-2xl border border-border/60 bg-muted/40 px-4 py-2 shadow-sm focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-colors duration-200"
                   >
                     <textarea
                       ref={textareaRef}
@@ -506,7 +495,6 @@ const GeminiSidebar = () => {
               </div>
             </div>
 
-            {/* ========= ARTIFACT PANEL (CỘT 3) ========= */}
             <AnimatePresence>
               {artifactOpen && currentArtifact && (
                 <motion.div
@@ -514,9 +502,10 @@ const GeminiSidebar = () => {
                   animate={{ width: "45%", opacity: 1 }}
                   exit={{ width: 0, opacity: 0 }}
                   transition={{ duration: 0.3, ease: "circOut" }}
-                  className="h-full border-l border-border/60 bg-muted/10 shrink-0 flex flex-col shadow-2xl z-20 overflow-hidden"
+                  className="h-full shrink-0 flex flex-col z-20 overflow-hidden"
                 >
                     <ArtifactPreview 
+                        open={artifactOpen} 
                         data={currentArtifact} 
                         onClose={() => setArtifactOpen(false)} 
                     />

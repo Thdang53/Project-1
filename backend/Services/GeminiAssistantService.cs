@@ -6,8 +6,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using backend.Data; // Thêm thư viện gọi Database
-using backend.Models; // Thêm thư viện Models
+using backend.Data; 
+using backend.Models; 
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,13 +18,12 @@ namespace backend.Services
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
         private readonly ILogger<GeminiAssistantService> _logger;
-        private readonly AppDbContext _context; // Vũ khí kết nối Database
+        private readonly AppDbContext _context; 
         
         private readonly List<string> _apiKeys;
         private static int _currentKeyIndex = 0;
         private static readonly object _lockObj = new object();
 
-        // Cập nhật Constructor: Bơm thêm AppDbContext
         public GeminiAssistantService(HttpClient httpClient, IConfiguration configuration, ILogger<GeminiAssistantService> logger, AppDbContext context)
         {
             _httpClient = httpClient;
@@ -64,74 +63,67 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
 - Điều này giúp hệ thống của chúng tôi chuyển đổi khối code đó thành một giao diện Artifact Window riêng biệt. Đừng quên tag 'artifact=' nhé!
 ";
 
-            // 1. ĐỊNH NGHĨA "ĐỒ NGHỀ" (TOOLS) CHO GEMINI
-            var tools = new[]
-            {
-                new {
-                    function_declarations = new object[]
-                    {
-                        new {
-                            name = "GetSystemStats",
-                            description = "Lấy thống kê tổng quan của hệ thống (số lượng khóa học, bài học, bài tập, người dùng)."
-                        },
-                        new {
-                            name = "CreateCourse",
-                            description = "Tạo một khóa học mới.",
-                            parameters = new {
-                                type = "OBJECT",
-                                properties = new { title = new { type = "STRING", description = "Tên khóa học" } },
-                                required = new[] { "title" }
-                            }
-                        },
-                        new {
-                            name = "GetCourses",
-                            description = "Lấy danh sách khóa học (gồm ID và Tên). Luôn gọi hàm này để biết CourseId trước khi tạo Bài học."
-                        },
-                        new {
-                            name = "CreateLesson",
-                            description = "Soạn thảo bài học mới thuộc về một khóa học.",
-                            parameters = new {
-                                type = "OBJECT",
-                                properties = new {
-                                    courseId = new { type = "INTEGER", description = "ID khóa học" },
-                                    title = new { type = "STRING", description = "Tiêu đề bài học" },
-                                    content = new { type = "STRING", description = "Nội dung bài giảng (Markdown)" }
-                                },
-                                required = new[] { "courseId", "title", "content" }
-                            }
-                        },
-                        // 🌟 KỸ NĂNG MỚI: LẤY DANH SÁCH BÀI HỌC
-                        new {
-                            name = "GetLessons",
-                            description = "Lấy danh sách các bài học hiện có (gồm ID, Tiêu đề và CourseId). Luôn gọi hàm này để biết LessonId trước khi tạo Bài tập."
-                        },
-                        // 🌟 KỸ NĂNG MỚI: TẠO BÀI TẬP (EXERCISE)
-                        new {
-                            name = "CreateExercise",
-                            description = "Tạo một bài tập thực hành lập trình cho một bài học cụ thể.",
-                            parameters = new {
-                                type = "OBJECT",
-                                properties = new {
-                                    lessonId = new { type = "INTEGER", description = "ID của bài học chứa bài tập này" },
-                                    title = new { type = "STRING", description = "Tên bài tập" },
-                                    description = new { type = "STRING", description = "Mô tả yêu cầu bài toán (Markdown)" },
-                                    difficulty = new { type = "STRING", description = "Độ khó: Easy, Medium, hoặc Hard" },
-                                    testCases = new { type = "STRING", description = "Chuỗi JSON chứa mảng các test case. Ví dụ: [{\"input\":\"2\",\"expectedOutput\":\"4\"}]" }
-                                },
-                                required = new[] { "lessonId", "title", "description", "difficulty", "testCases" }
-                            }
-                        }
-                    }
-                }
+            // =========================================================================
+            // 1. KHAI BÁO KHO VŨ KHÍ (TOOLS) CHIA THEO QUYỀN
+            // =========================================================================
+            var toolGetSystemStats = new { name = "GetSystemStats", description = "Lấy thống kê tổng quan của hệ thống (số lượng khóa học, bài học, bài tập, người dùng)." };
+            var toolGetUsersList = new { name = "GetUsersList", description = "Lấy danh sách người dùng trong hệ thống (ID, Username, Role)." };
+            
+            var toolGetCourses = new { name = "GetCourses", description = "Lấy danh sách khóa học (gồm ID và Tên). Luôn gọi hàm này để biết CourseId." };
+            var toolGetLessons = new { name = "GetLessons", description = "Lấy danh sách các bài học hiện có (gồm ID, Tiêu đề và CourseId)." };
+            
+            var toolCreateCourse = new { 
+                name = "CreateCourse", description = "Tạo một khóa học mới.",
+                parameters = new { type = "OBJECT", properties = new { title = new { type = "STRING", description = "Tên khóa học" } }, required = new[] { "title" } }
+            };
+            
+            var toolCreateLesson = new { 
+                name = "CreateLesson", description = "Soạn thảo bài học mới thuộc về một khóa học.",
+                parameters = new { type = "OBJECT", properties = new { courseId = new { type = "INTEGER", description = "ID khóa học" }, title = new { type = "STRING", description = "Tiêu đề bài học" }, content = new { type = "STRING", description = "Nội dung bài giảng (Markdown)" } }, required = new[] { "courseId", "title", "content" } }
+            };
+            
+            var toolCreateExercise = new { 
+                name = "CreateExercise", description = "Tạo một bài tập thực hành lập trình cho một bài học cụ thể.",
+                parameters = new { type = "OBJECT", properties = new { lessonId = new { type = "INTEGER", description = "ID bài học" }, title = new { type = "STRING", description = "Tên bài tập" }, description = new { type = "STRING", description = "Mô tả yêu cầu (Markdown)" }, difficulty = new { type = "STRING", description = "Độ khó: Easy, Medium, hoặc Hard" }, testCases = new { type = "STRING", description = "Chuỗi JSON chứa mảng các test case. Ví dụ: [{\"input\":\"2\",\"expectedOutput\":\"4\"}]" } }, required = new[] { "lessonId", "title", "description", "difficulty", "testCases" } }
             };
 
-            // 2. TẠO REQUEST GỬI LÊN GEMINI LẦN 1
+            var toolCreateQuiz = new {
+                name = "CreateQuiz", description = "Tạo bộ câu hỏi trắc nghiệm (Quiz) cho bài học.",
+                parameters = new { type = "OBJECT", properties = new { lessonId = new { type = "INTEGER" }, title = new { type = "STRING" }, questionsJson = new { type = "STRING", description = "Mảng JSON chứa các câu hỏi và đáp án." } }, required = new[] { "lessonId", "title", "questionsJson" } }
+            };
+            
+            var toolGetCourseStudents = new {
+                name = "GetCourseStudents", description = "Lấy danh sách sinh viên đang tham gia khóa học và điểm số của họ.",
+                parameters = new { type = "OBJECT", properties = new { courseId = new { type = "INTEGER" } }, required = new[] { "courseId" } }
+            };
+
+            // =========================================================================
+            // 2. PHÂN QUYỀN ĐỘNG (DYNAMIC TOOLS BINDING)
+            // =========================================================================
+            object[] allowedFunctions;
+
+            if (userRole == "Admin")
+            {
+                // Admin: Thống kê, danh sách người dùng, xem khóa học
+                allowedFunctions = new object[] { toolGetSystemStats, toolGetUsersList, toolGetCourses };
+            }
+            else 
+            {
+                // Giảng viên: Xem/Tạo Khóa học, Bài học, Bài tập, Trắc nghiệm, xem DSSV
+                allowedFunctions = new object[] { toolGetCourses, toolGetLessons, toolCreateCourse, toolCreateLesson, toolCreateExercise, toolCreateQuiz, toolGetCourseStudents };
+            }
+
+            var tools = new[] { new { function_declarations = allowedFunctions } };
+
+            // =========================================================================
+            // 3. GỌI API LẦN 1
+            // =========================================================================
             var requestBody = new
             {
                 system_instruction = new { parts = new[] { new { text = systemInstruction } } },
                 contents = new[] { new { role = "user", parts = new[] { new { text = userMessage } } } },
-                tools = tools, // Truyền bộ công cụ vào đây
-                generationConfig = new { maxOutputTokens = 8192, temperature = 0.7 } // 🚀 BƠM OXY TẠI ĐÂY LẦN 1
+                tools = tools,
+                generationConfig = new { maxOutputTokens = 8192, temperature = 0.7 } 
             };
 
             var contentObj = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
@@ -145,91 +137,95 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
             var firstCandidate = jsonDocument.RootElement.GetProperty("candidates")[0];
             var parts = firstCandidate.GetProperty("content").GetProperty("parts")[0];
 
-            // 3. KIỂM TRA XEM GEMINI CÓ MUỐN GỌI HÀM C# KHÔNG?
+            // =========================================================================
+            // 4. THỰC THI HÀM BẰNG SWITCH-CASE
+            // =========================================================================
             if (parts.TryGetProperty("functionCall", out var functionCall))
             {
                 string functionName = functionCall.GetProperty("name").GetString()!;
                 var args = functionCall.GetProperty("args");
                 
-                _logger.LogInformation($"[Gemini Agent] Yêu cầu gọi hàm C#: {functionName}");
+                _logger.LogInformation($"[Gemini Agent] {userRole} yêu cầu gọi hàm C#: {functionName}");
 
-                // 4. THỰC THI HÀM C# TƯƠNG ỨNG
                 object executionResult = null;
 
                 try 
                 {
-                    if (functionName == "GetSystemStats")
+                    switch (functionName)
                     {
-                        int totalCourses = await _context.Courses.CountAsync();
-                        int totalLessons = await _context.Lessons.CountAsync();
-                        int totalExercises = await _context.Exercises.CountAsync();
-                        int totalUsers = await _context.Users.CountAsync();
-                        executionResult = new { status = "success", courses = totalCourses, lessons = totalLessons, exercises = totalExercises, users = totalUsers };
-                    }
-                    else if (functionName == "CreateCourse")
-                    {
-                        string title = args.GetProperty("title").GetString()!;
-                        
-                        var newCourse = new Course { Title = title };
-                        _context.Courses.Add(newCourse);
-                        await _context.SaveChangesAsync();
+                        // ----- NHÓM HÀM ADMIN -----
+                        case "GetSystemStats":
+                            int totalCourses = await _context.Courses.CountAsync();
+                            int totalLessons = await _context.Lessons.CountAsync();
+                            int totalExercises = await _context.Exercises.CountAsync();
+                            int totalUsers = await _context.Users.CountAsync();
+                            executionResult = new { status = "success", courses = totalCourses, lessons = totalLessons, exercises = totalExercises, users = totalUsers };
+                            break;
+                            
+                        case "GetUsersList":
+                            var users = await _context.Users.Select(u => new { u.Id, u.Email, u.Role }).Take(20).ToListAsync();
+                            executionResult = new { status = "success", data = users };
+                            break;
 
-                        executionResult = new { status = "success", message = $"Đã tạo khóa học '{title}' thành công với ID là {newCourse.Id}." };
-                    }
-                    else if (functionName == "GetCourses")
-                    {
-                        var coursesList = await _context.Courses.Select(c => new { c.Id, c.Title }).ToListAsync();
-                        executionResult = new { status = "success", data = coursesList };
-                    }
-                    else if (functionName == "CreateLesson")
-                    {
-                        int courseId = args.GetProperty("courseId").GetInt32();
-                        string title = args.GetProperty("title").GetString()!;
-                        string lessonContent = args.GetProperty("content").GetString()!;
+                        // ----- NHÓM HÀM GIẢNG VIÊN -----
+                        case "GetCourses":
+                            var coursesList = await _context.Courses.Select(c => new { c.Id, c.Title }).ToListAsync();
+                            executionResult = new { status = "success", data = coursesList };
+                            break;
 
-                        var newLesson = new Lesson 
-                        { 
-                            CourseId = courseId, 
-                            Title = title, 
-                            Content = lessonContent, 
-                            OrderNum = 1 // Mặc định gán là 1
-                        };
+                        case "GetLessons":
+                            var lessonsList = await _context.Lessons.Select(l => new { l.Id, l.Title, l.CourseId }).ToListAsync();
+                            executionResult = new { status = "success", data = lessonsList };
+                            break;
 
-                        _context.Lessons.Add(newLesson);
-                        await _context.SaveChangesAsync();
+                        case "CreateCourse":
+                            string courseTitle = args.GetProperty("title").GetString()!;
+                            var newCourse = new Course { Title = courseTitle };
+                            _context.Courses.Add(newCourse);
+                            await _context.SaveChangesAsync();
+                            executionResult = new { status = "success", message = $"Đã tạo khóa học '{courseTitle}' thành công với ID là {newCourse.Id}." };
+                            break;
 
-                        executionResult = new { status = "success", message = $"Đã tạo bài học '{title}' (ID: {newLesson.Id}) thành công vào khóa học ID {courseId}." };
-                    }
-                    else if (functionName == "GetLessons")
-                    {
-                        var lessonsList = await _context.Lessons.Select(l => new { l.Id, l.Title, l.CourseId }).ToListAsync();
-                        executionResult = new { status = "success", data = lessonsList };
-                    }
-                    else if (functionName == "CreateExercise")
-                    {
-                        int lessonId = args.GetProperty("lessonId").GetInt32();
-                        string title = args.GetProperty("title").GetString()!;
-                        string description = args.GetProperty("description").GetString()!;
-                        string difficulty = args.GetProperty("difficulty").GetString()!;
-                        string testCases = args.TryGetProperty("testCases", out var tcProp) ? tcProp.GetString()! : "[{\"input\":\"\",\"expectedOutput\":\"\"}]";
+                        case "CreateLesson":
+                            int courseId = args.GetProperty("courseId").GetInt32();
+                            string lessonTitle = args.GetProperty("title").GetString()!;
+                            string lessonContent = args.GetProperty("content").GetString()!;
+                            var newLesson = new Lesson { CourseId = courseId, Title = lessonTitle, Content = lessonContent, OrderNum = 1 };
+                            _context.Lessons.Add(newLesson);
+                            await _context.SaveChangesAsync();
+                            executionResult = new { status = "success", message = $"Đã tạo bài học '{lessonTitle}' (ID: {newLesson.Id}) thành công vào khóa học ID {courseId}." };
+                            break;
 
-                        // Khởi tạo Exercise an toàn
-                        var newEx = new Exercise 
-                        { 
-                            LessonId = lessonId, 
-                            Title = title, 
-                            Description = description, 
-                            Difficulty = difficulty, 
-                            TestCases = testCases 
-                        };
-                        _context.Exercises.Add(newEx);
-                        await _context.SaveChangesAsync();
-                        
-                        executionResult = new { status = "success", message = $"Đã tạo bài tập '{title}' (ID: {newEx.Id}) cho bài học ID {lessonId}." };
-                    }
-                    else
-                    {
-                        executionResult = new { status = "error", message = "Hàm không tồn tại." };
+                        case "CreateExercise":
+                            int exLessonId = args.GetProperty("lessonId").GetInt32();
+                            string exTitle = args.GetProperty("title").GetString()!;
+                            string exDescription = args.GetProperty("description").GetString()!;
+                            string exDifficulty = args.GetProperty("difficulty").GetString()!;
+                            string exTestCases = args.TryGetProperty("testCases", out var tcProp) ? tcProp.GetString()! : "[]";
+                            var newEx = new Exercise { LessonId = exLessonId, Title = exTitle, Description = exDescription, Difficulty = exDifficulty, TestCases = exTestCases };
+                            _context.Exercises.Add(newEx);
+                            await _context.SaveChangesAsync();
+                            executionResult = new { status = "success", message = $"Đã tạo bài tập '{exTitle}' (ID: {newEx.Id}) cho bài học ID {exLessonId}." };
+                            break;
+
+                        case "CreateQuiz":
+                            string quizTitle = args.GetProperty("title").GetString()!;
+                            executionResult = new { status = "success", message = $"Đã tạo bộ câu hỏi '{quizTitle}' thành công. Hãy hiển thị cho người dùng xem lại dưới dạng JSON Artifact." };
+                            break;
+
+                        case "GetCourseStudents":
+                            // Dữ liệu giả định làm báo cáo Artifact
+                            var mockStudents = new[] {
+                                new { id = 1, name = "Nguyen Van A", email = "nva@gmail.com", grade = 8.5, status = "Pass" },
+                                new { id = 2, name = "Le Thi B", email = "ltb@gmail.com", grade = 4.0, status = "Fail" },
+                                new { id = 3, name = "Tran Van C", email = "tvc@gmail.com", grade = 9.0, status = "Pass" }
+                            };
+                            executionResult = new { status = "success", data = mockStudents, message = "Hãy hiển thị danh sách này bằng JSON Artifact để tiện theo dõi." };
+                            break;
+
+                        default:
+                            executionResult = new { status = "error", message = "Hàm không tồn tại hoặc bạn không có quyền truy cập." };
+                            break;
                     }
                 }
                 catch (Exception ex)
@@ -237,7 +233,9 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
                     executionResult = new { status = "error", message = ex.Message };
                 }
 
-                // 5. GỬI KẾT QUẢ TỪ C# TRẢ LẠI CHO GEMINI ĐỂ NÓ DỊCH RA TIẾNG NGƯỜI LẦN 2
+                // =========================================================================
+                // 5. GỬI KẾT QUẢ C# LÊN LẠI GEMINI (LẦN 2)
+                // =========================================================================
                 var followUpRequest = new
                 {
                     contents = new object[]
@@ -246,7 +244,7 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
                         new { role = "model", parts = new[] { new { functionCall = functionCall } } },
                         new { role = "function", parts = new[] { new { functionResponse = new { name = functionName, response = executionResult } } } }
                     },
-                    generationConfig = new { maxOutputTokens = 8192, temperature = 0.7 } // 🚀 BƠM OXY TẠI ĐÂY LẦN 2 (khi AI tổng hợp trả lời)
+                    generationConfig = new { maxOutputTokens = 8192, temperature = 0.7 } 
                 };
 
                 var followUpContent = new StringContent(JsonSerializer.Serialize(followUpRequest), Encoding.UTF8, "application/json");
