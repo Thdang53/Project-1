@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Models;
+using backend.Services; // THÊM DÒNG NÀY ĐỂ GỌI ĐƯỢC GEMINI SERVICE
 using System.Security.Claims;
 
 namespace backend.Controllers
@@ -115,6 +116,26 @@ namespace backend.Controllers
             _context.Lessons.Remove(lesson);
             await _context.SaveChangesAsync();
             return NoContent();
+        }
+
+        // =========================================================================
+        // 5. TÍNH NĂNG MỚI: API GỌI AI VẼ SƠ ĐỒ TƯ DUY (MINDMAP)
+        // =========================================================================
+        [HttpGet("{id}/mindmap")]
+        public async Task<IActionResult> GetLessonMindmap(int id, [FromServices] GeminiAssistantService _geminiService)
+        {
+            // 1. Tìm bài học trong Database
+            var lesson = await _context.Lessons.FindAsync(id);
+            if (lesson == null) return NotFound(new { message = "Không tìm thấy bài học" });
+
+            // 2. Nhờ AI vẽ Mindmap dựa trên nội dung bài đó
+            string title = string.IsNullOrEmpty(lesson.Title) ? "Không có tiêu đề" : lesson.Title;
+            string content = string.IsNullOrEmpty(lesson.Content) ? "Không có nội dung" : lesson.Content;
+
+            string mermaidCode = await _geminiService.GenerateLessonMindmapAsync(title, content);
+
+            // 3. Ném về cho Frontend React
+            return Ok(new { mindmapCode = mermaidCode });
         }
     }
 }

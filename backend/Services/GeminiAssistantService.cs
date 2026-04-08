@@ -41,20 +41,93 @@ namespace backend.Services
             {
                 string key = _apiKeys[_currentKeyIndex];
                 _currentKeyIndex = (_currentKeyIndex + 1) % _apiKeys.Count;
-                return key;
+                return key.Trim().Replace(" ", "").Replace("\r", "").Replace("\n", "");
             }
         }
 
+        // =========================================================================
+        // HÀM: TỰ ĐỘNG VẼ SƠ ĐỒ TƯ DUY - TRẢ VỀ DỮ LIỆU JSON CHO KNOWLEDGE GRAPH
+        // =========================================================================
+        public async Task<string> GenerateLessonMindmapAsync(string lessonTitle, string lessonContent)
+        {
+            string prompt = $@"Bạn là chuyên gia thiết kế giáo trình. Hãy tóm tắt bài giảng sau thành một cấu trúc dữ liệu JSON để hiển thị bằng thư viện React Flow.
+
+QUY TẮC BẮT BUỘC:
+1. TRẢ VỀ MỘT KHỐI JSON DUY NHẤT VÀ HOÀN CHỈNH. TUYỆT ĐỐI KHÔNG ĐƯỢC DỪNG VIẾT GIỮA CHỪNG.
+2. Cấu trúc JSON phải chính xác như sau (Không dùng định dạng markdown hay bất kì text nào ngoài json này):
+{{
+  ""nodes"": [
+    {{ ""id"": ""1"", ""type"": ""mindmap"", ""data"": {{ ""label"": ""Tên khái niệm"", ""level"": 1 }} }}
+  ],
+  ""edges"": [
+    {{ ""id"": ""e1-2"", ""source"": ""1"", ""target"": ""2"" }}
+  ]
+}}
+3. Hãy tự động tạo liên kết (edges) logic giữa các khái niệm. Level 1 là chủ đề chính, level 2 là mục con, level 3 là chi tiết.
+
+Tiêu đề: {lessonTitle}
+Nội dung: {lessonContent}";
+
+            try
+            {
+                string apiKey = GetNextApiKey();
+                var uriBuilder = new UriBuilder("https", "generativelanguage.googleapis.com");
+                uriBuilder.Path = "/v1beta/models/gemini-2.5-flash:generateContent";
+                uriBuilder.Query = $"key={apiKey}";
+                
+                var requestBody = new
+                {
+                    contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } },
+                    generationConfig = new { 
+                        maxOutputTokens = 8192, // 💡 Bơm kịch kim token để không bị đứt đoạn JSON
+                        temperature = 0.2
+                        // Đã bỏ responseMimeType
+                    } 
+                };
+
+                var contentObj = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+                var requestMessage = new HttpRequestMessage(HttpMethod.Post, uriBuilder.Uri) { Content = contentObj };
+                var response = await _httpClient.SendAsync(requestMessage);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorStr = await response.Content.ReadAsStringAsync();
+                    throw new Exception($"Gemini trả về lỗi: {errorStr}");
+                }
+
+                var responseString = await response.Content.ReadAsStringAsync();
+                using var jsonDocument = JsonDocument.Parse(responseString);
+                
+                string textResponse = jsonDocument.RootElement
+                                        .GetProperty("candidates")[0]
+                                        .GetProperty("content")
+                                        .GetProperty("parts")[0]
+                                        .GetProperty("text").GetString()!;
+                
+                return textResponse.Trim();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Lỗi sinh Mindmap JSON: {ex.Message}");
+                return "{\"nodes\":[{\"id\":\"1\",\"type\":\"mindmap\",\"data\":{\"label\":\"Lỗi hệ thống AI\",\"level\":1}}],\"edges\":[]}";
+            }
+        }
+
+        // =========================================================================
+        // HÀM: XỬ LÝ CHAT & COMMAND CENTER CỦA ADMIN/GIẢNG VIÊN
+        // =========================================================================
         public async Task<string> ProcessGeminiChatAsync(string userRole, int userId, string userMessage)
         {
             string apiKey = GetNextApiKey();
-            string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+            
+            var uriBuilder = new UriBuilder("https", "generativelanguage.googleapis.com");
+            uriBuilder.Path = "/v1beta/models/gemini-2.5-flash:generateContent";
+            uriBuilder.Query = $"key={apiKey}";
             
             var systemInstruction = userRole == "Admin" 
                 ? "Bạn là Giám đốc Vận hành hệ thống (Gemini Admin). Hãy hỗ trợ quản lý hệ thống LMS." 
                 : "Bạn là Trợ giảng Học thuật (Gemini Lecturer). Hãy hỗ trợ giảng viên soạn bài và quản lý sinh viên.";
 
-            // 🚀 BƠM THÊM LUẬT SỬ DỤNG ARTIFACTS CHO AI
             systemInstruction += @"
 QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
 - Nếu trả lời hội thoại bình thường: Cứ trả lời bằng Markdown như bình thường.
@@ -63,61 +136,41 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
 - Điều này giúp hệ thống của chúng tôi chuyển đổi khối code đó thành một giao diện Artifact Window riêng biệt. Đừng quên tag 'artifact=' nhé!
 ";
 
-            // =========================================================================
-            // 1. KHAI BÁO KHO VŨ KHÍ (TOOLS) CHIA THEO QUYỀN
-            // =========================================================================
             var toolGetSystemStats = new { name = "GetSystemStats", description = "Lấy thống kê tổng quan của hệ thống (số lượng khóa học, bài học, bài tập, người dùng)." };
             var toolGetUsersList = new { name = "GetUsersList", description = "Lấy danh sách người dùng trong hệ thống (ID, Username, Role)." };
-            
             var toolGetCourses = new { name = "GetCourses", description = "Lấy danh sách khóa học (gồm ID và Tên). Luôn gọi hàm này để biết CourseId." };
             var toolGetLessons = new { name = "GetLessons", description = "Lấy danh sách các bài học hiện có (gồm ID, Tiêu đề và CourseId)." };
-            
             var toolCreateCourse = new { 
                 name = "CreateCourse", description = "Tạo một khóa học mới.",
                 parameters = new { type = "OBJECT", properties = new { title = new { type = "STRING", description = "Tên khóa học" } }, required = new[] { "title" } }
             };
-            
             var toolCreateLesson = new { 
                 name = "CreateLesson", description = "Soạn thảo bài học mới thuộc về một khóa học.",
                 parameters = new { type = "OBJECT", properties = new { courseId = new { type = "INTEGER", description = "ID khóa học" }, title = new { type = "STRING", description = "Tiêu đề bài học" }, content = new { type = "STRING", description = "Nội dung bài giảng (Markdown)" } }, required = new[] { "courseId", "title", "content" } }
             };
-            
             var toolCreateExercise = new { 
                 name = "CreateExercise", description = "Tạo một bài tập thực hành lập trình cho một bài học cụ thể.",
                 parameters = new { type = "OBJECT", properties = new { lessonId = new { type = "INTEGER", description = "ID bài học" }, title = new { type = "STRING", description = "Tên bài tập" }, description = new { type = "STRING", description = "Mô tả yêu cầu (Markdown)" }, difficulty = new { type = "STRING", description = "Độ khó: Easy, Medium, hoặc Hard" }, testCases = new { type = "STRING", description = "Chuỗi JSON chứa mảng các test case. Ví dụ: [{\"input\":\"2\",\"expectedOutput\":\"4\"}]" } }, required = new[] { "lessonId", "title", "description", "difficulty", "testCases" } }
             };
-
             var toolCreateQuiz = new {
                 name = "CreateQuiz", description = "Tạo bộ câu hỏi trắc nghiệm (Quiz) cho bài học.",
                 parameters = new { type = "OBJECT", properties = new { lessonId = new { type = "INTEGER" }, title = new { type = "STRING" }, questionsJson = new { type = "STRING", description = "Mảng JSON chứa các câu hỏi và đáp án." } }, required = new[] { "lessonId", "title", "questionsJson" } }
             };
-            
             var toolGetCourseStudents = new {
                 name = "GetCourseStudents", description = "Lấy danh sách sinh viên đang tham gia khóa học và điểm số của họ.",
                 parameters = new { type = "OBJECT", properties = new { courseId = new { type = "INTEGER" } }, required = new[] { "courseId" } }
             };
 
-            // =========================================================================
-            // 2. PHÂN QUYỀN ĐỘNG (DYNAMIC TOOLS BINDING)
-            // =========================================================================
             object[] allowedFunctions;
 
-            if (userRole == "Admin")
-            {
-                // Admin: Thống kê, danh sách người dùng, xem khóa học
+            if (userRole == "Admin") {
                 allowedFunctions = new object[] { toolGetSystemStats, toolGetUsersList, toolGetCourses };
-            }
-            else 
-            {
-                // Giảng viên: Xem/Tạo Khóa học, Bài học, Bài tập, Trắc nghiệm, xem DSSV
+            } else {
                 allowedFunctions = new object[] { toolGetCourses, toolGetLessons, toolCreateCourse, toolCreateLesson, toolCreateExercise, toolCreateQuiz, toolGetCourseStudents };
             }
 
             var tools = new[] { new { function_declarations = allowedFunctions } };
 
-            // =========================================================================
-            // 3. GỌI API LẦN 1
-            // =========================================================================
             var requestBody = new
             {
                 system_instruction = new { parts = new[] { new { text = systemInstruction } } },
@@ -127,7 +180,9 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
             };
 
             var contentObj = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync(apiUrl, contentObj);
+            
+            var requestMessage = new HttpRequestMessage(HttpMethod.Post, uriBuilder.Uri) { Content = contentObj };
+            var response = await _httpClient.SendAsync(requestMessage);
 
             if (!response.IsSuccessStatusCode)
                 throw new Exception("Lỗi kết nối API Gemini lần 1.");
@@ -137,9 +192,6 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
             var firstCandidate = jsonDocument.RootElement.GetProperty("candidates")[0];
             var parts = firstCandidate.GetProperty("content").GetProperty("parts")[0];
 
-            // =========================================================================
-            // 4. THỰC THI HÀM BẰNG SWITCH-CASE
-            // =========================================================================
             if (parts.TryGetProperty("functionCall", out var functionCall))
             {
                 string functionName = functionCall.GetProperty("name").GetString()!;
@@ -153,7 +205,6 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
                 {
                     switch (functionName)
                     {
-                        // ----- NHÓM HÀM ADMIN -----
                         case "GetSystemStats":
                             int totalCourses = await _context.Courses.CountAsync();
                             int totalLessons = await _context.Lessons.CountAsync();
@@ -167,7 +218,6 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
                             executionResult = new { status = "success", data = users };
                             break;
 
-                        // ----- NHÓM HÀM GIẢNG VIÊN -----
                         case "GetCourses":
                             var coursesList = await _context.Courses.Select(c => new { c.Id, c.Title }).ToListAsync();
                             executionResult = new { status = "success", data = coursesList };
@@ -214,7 +264,6 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
                             break;
 
                         case "GetCourseStudents":
-                            // Dữ liệu giả định làm báo cáo Artifact
                             var mockStudents = new[] {
                                 new { id = 1, name = "Nguyen Van A", email = "nva@gmail.com", grade = 8.5, status = "Pass" },
                                 new { id = 2, name = "Le Thi B", email = "ltb@gmail.com", grade = 4.0, status = "Fail" },
@@ -233,9 +282,6 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
                     executionResult = new { status = "error", message = ex.Message };
                 }
 
-                // =========================================================================
-                // 5. GỬI KẾT QUẢ C# LÊN LẠI GEMINI (LẦN 2)
-                // =========================================================================
                 var followUpRequest = new
                 {
                     contents = new object[]
@@ -248,7 +294,10 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
                 };
 
                 var followUpContent = new StringContent(JsonSerializer.Serialize(followUpRequest), Encoding.UTF8, "application/json");
-                var followUpResponse = await _httpClient.PostAsync(apiUrl, followUpContent);
+                
+                var followUpRequestMessage = new HttpRequestMessage(HttpMethod.Post, uriBuilder.Uri) { Content = followUpContent };
+                var followUpResponse = await _httpClient.SendAsync(followUpRequestMessage);
+                
                 var followUpString = await followUpResponse.Content.ReadAsStringAsync();
                 
                 using var followUpDoc = JsonDocument.Parse(followUpString);
@@ -257,7 +306,6 @@ QUY TẮC HIỂN THỊ DỮ LIỆU (ARTIFACTS):
                                   .GetProperty("text").GetString()!;
             }
 
-            // Nếu Gemini không gọi hàm mà chỉ trả lời Text thông thường
             return parts.GetProperty("text").GetString() ?? "Không thể xử lý yêu cầu.";
         }
     }

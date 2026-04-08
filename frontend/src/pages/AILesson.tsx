@@ -11,6 +11,9 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
+// 💡 IMPORT COMPONENT KNOWLEDGE GRAPH MỚI TỪ LOVABLE
+import KnowledgeGraph from "@/components/ui/KnowledgeGraph";
+
 const MOCK_API_URL = "http://localhost:5043";
 const SUPPORTED_LANGUAGES = ["C++", "Python", "Java", "JavaScript"]; 
 
@@ -77,7 +80,6 @@ const AILesson = () => {
   const aiExerciseData = location.state?.exerciseData;
   const popupLanguage = location.state?.popupLanguage;
   
-  // 💡 LẤY NỘI DUNG BÀI GIẢNG ĐÃ LƯU TỪ DASHBOARD (NẾU CÓ)
   const savedLessonContent = location.state?.savedLessonContent;
 
   const hasFetchedRef = useRef(false);
@@ -90,7 +92,6 @@ const AILesson = () => {
     return SUPPORTED_LANGUAGES.includes(savedLang || "") ? savedLang! : "C++";
   });
 
-  // 💡 NẾU LÀ BÀI ĐÃ LƯU THỊ HIỆN NGAY, KHÔNG CẦN CHỜ LOAD
   const [aiContent, setAiContent] = useState<string>(savedLessonContent || "");
   const [loading, setLoading] = useState(!savedLessonContent);
   const [error, setError] = useState<string | null>(null);
@@ -98,11 +99,74 @@ const AILesson = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
+  // 💡 STATE CHO MINDMAP DẠNG JSON
+  const [mindmapData, setMindmapData] = useState<{nodes: any[], edges: any[]} | null>(null);
+  const [loadingMindmap, setLoadingMindmap] = useState(false);
+
   const getApiUrl = () => {
     try {
       return import.meta.env.VITE_API_BASE_URL || MOCK_API_URL;
     } catch (e) {
       return MOCK_API_URL;
+    }
+  };
+
+  // 💡 HÀM NHẬN VÀ PARSE JSON TỪ AI (BỘ LỌC THÉP 100%)
+  const autoFetchMindmap = async (textContent: string) => {
+    if (!textContent) return;
+    
+    setLoadingMindmap(true);
+    try {
+        const API_BASE_URL = getApiUrl();
+        const res = await fetch(`${API_BASE_URL}/api/AIAssistant/generate-direct-mindmap`, {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ Content: textContent })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            try {
+                // 💡 IN RA F12 ĐỂ XEM AI NÓ ĐANG NÓI CÁI GÌ
+                console.log("🤖 Dữ liệu gốc từ AI:", data.mindmapCode);
+
+                let cleanJsonStr = data.mindmapCode;
+                
+                // 💡 THUẬT TOÁN KẸP LỒNG KÍNH: Chỉ lấy phần nằm trong ngoặc nhọn { ... }
+                const startIndex = cleanJsonStr.indexOf('{');
+                const endIndex = cleanJsonStr.lastIndexOf('}');
+                
+                if (startIndex !== -1 && endIndex !== -1) {
+                    cleanJsonStr = cleanJsonStr.substring(startIndex, endIndex + 1);
+                }
+
+                const parsedData = JSON.parse(cleanJsonStr);
+                
+                // KHIÊN BẢO VỆ: Nếu AI quên trả về nodes thì mình tạo 1 node báo lỗi
+                if (!parsedData.nodes || !Array.isArray(parsedData.nodes) || parsedData.nodes.length === 0) {
+                     parsedData.nodes = [{ id: "1", type: "mindmap", data: { label: "Sơ đồ trống (AI không tìm thấy ý chính)", level: 1 } }];
+                }
+                if (!parsedData.edges || !Array.isArray(parsedData.edges)) {
+                     parsedData.edges = [];
+                }
+
+                setMindmapData(parsedData);
+            } catch (parseError) {
+                console.error("Lỗi Parse JSON Mindmap:", parseError);
+                setMindmapData({
+                    nodes: [{ id: "error", type: "mindmap", data: { label: "AI sinh JSON bị lỗi (Bấm F12 để xem)", level: 1 } }],
+                    edges: []
+                });
+            }
+        } else {
+            console.error("Lỗi lấy Mindmap:", data);
+        }
+    } catch (error) {
+        console.error("Lỗi kết nối tới API Mindmap:", error);
+    } finally {
+        setLoadingMindmap(false);
     }
   };
 
@@ -148,12 +212,18 @@ const AILesson = () => {
 
     if (!hasFetchedRef.current) {
       hasFetchedRef.current = true;
-      // 💡 CHỈ GỌI AI KHI CHƯA CÓ DỮ LIỆU LƯU SẴN
       if (!savedLessonContent) {
           fetchAI(selectedLanguage);
       }
     }
   }, [exercise]);
+
+  // 💡 TỰ ĐỘNG CHẠY HÀM VẼ KHI AI SOẠN BÀI XONG
+  useEffect(() => {
+      if (aiContent && !loading && !mindmapData && !loadingMindmap) {
+          autoFetchMindmap(aiContent);
+      }
+  }, [aiContent, loading]);
 
   const handleLanguageChange = (lang: string) => {
     if (lang === selectedLanguage || loading) return;
@@ -161,7 +231,8 @@ const AILesson = () => {
     setSelectedLanguage(lang);
     localStorage.setItem("preferred_language", lang);
     setIsSaved(false); 
-    fetchAI(lang); // Đổi ngôn ngữ thì bắt buộc phải nhờ AI viết lại
+    setMindmapData(null); // 💡 Reset mindmap cũ
+    fetchAI(lang); 
   };
 
   const handleSaveLesson = async () => {
@@ -182,7 +253,7 @@ const AILesson = () => {
           description: exercise.description,
           difficulty: exercise.difficulty || "Cơ bản",
           language: selectedLanguage,
-          starterCode: aiContent, // 💡 BÍ QUYẾT ĐÂY: Lưu nguyên cái đoạn văn AI giảng vào đây!
+          starterCode: aiContent, 
           testCases: "[]",
           contentType: "Lesson" 
         })
@@ -223,7 +294,6 @@ const AILesson = () => {
             Quay lại Dashboard
           </Button>
 
-          {/* 💡 ẨN NÚT LƯU NẾU ĐÂY ĐÃ LÀ BÀI MỞ LÊN TỪ THƯ VIỆN */}
           {!loading && !error && userEmail && !savedLessonContent && (
              <Button 
                onClick={handleSaveLesson} 
@@ -284,6 +354,42 @@ const AILesson = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ======================================================== */}
+            {/* 💡 KHU VỰC HIỂN THỊ KNOWLEDGE GRAPH TỰ ĐỘNG */}
+            {/* ======================================================== */}
+            {(loadingMindmap || mindmapData) && (
+              <div className="mb-8 p-6 bg-card border border-border rounded-2xl shadow-sm relative overflow-hidden">
+                  <div className="flex items-center gap-2 text-foreground font-bold mb-6">
+                      <span className="text-xl flex items-center">
+                          🧠 Sơ đồ Kiến thức (Mindmap)
+                          {loadingMindmap && (
+                              <span className="ml-3 text-sm font-normal text-muted-foreground flex items-center">
+                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin text-primary" /> 
+                                  AI đang thiết kế sơ đồ...
+                              </span>
+                          )}
+                      </span>
+                  </div>
+                  
+                  {mindmapData && (
+                      <div className="animate-in slide-in-from-bottom-4 fade-in duration-700">
+                          <KnowledgeGraph nodes={mindmapData.nodes} edges={mindmapData.edges} />
+                      </div>
+                  )}
+                  
+                  {/* Lớp phủ mờ đẹp mắt khi đang tải */}
+                  {loadingMindmap && (
+                      <div className="h-[400px] w-full rounded-xl bg-muted/30 animate-pulse flex flex-col items-center justify-center border border-dashed border-border">
+                          <div className="h-2 w-1/3 bg-primary/20 rounded-full overflow-hidden mb-4">
+                              <div className="h-full w-1/2 bg-primary rounded-full animate-bounce"></div>
+                          </div>
+                          <p className="text-muted-foreground text-sm font-medium">Đang gọi thuật toán Layout...</p>
+                      </div>
+                  )}
+              </div>
+            )}
+            {/* ======================================================== */}
 
             <div className="flex flex-wrap items-center gap-2 mb-6 p-4 bg-muted/40 rounded-xl border border-border">
               <div className="flex items-center text-sm font-semibold text-muted-foreground mr-2">

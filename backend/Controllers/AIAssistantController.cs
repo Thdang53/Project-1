@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System;
 using System.Linq; 
-using Microsoft.EntityFrameworkCore; // Thêm dòng này để hỗ trợ các lệnh Async DB
+using Microsoft.EntityFrameworkCore; 
 using backend.Data;    
 using backend.Models;  
 
@@ -23,7 +23,6 @@ namespace backend.Controllers
         private readonly IConfiguration _configuration;
         private readonly AppDbContext _context; 
         
-        // Tiêm (Inject) thêm Bộ Não Gemini vào đây
         private readonly backend.Services.GeminiAssistantService _geminiService;
 
         public AIAssistantController(HttpClient httpClient, IConfiguration configuration, AppDbContext context, backend.Services.GeminiAssistantService geminiService)
@@ -31,7 +30,7 @@ namespace backend.Controllers
             _httpClient = httpClient;
             _configuration = configuration;
             _context = context; 
-            _geminiService = geminiService; // Khởi tạo Service
+            _geminiService = geminiService; 
         }
 
         // ==========================================
@@ -49,6 +48,8 @@ namespace backend.Controllers
             public string Language { get; set; } = "python";
             public string ErrorOutput { get; set; } = string.Empty; 
             public string UserQuestion { get; set; } = string.Empty; 
+            // 🚀 THÊM ExerciseId VÀO ĐÂY ĐỂ NHẬN DIỆN BÀI TẬP TỪ FRONTEND
+            public int ExerciseId { get; set; } 
             public string ExerciseTitle { get; set; } = string.Empty;
             public string ExerciseDescription { get; set; } = string.Empty;
             public List<ChatMessage> ChatHistory { get; set; } = new();
@@ -92,7 +93,6 @@ namespace backend.Controllers
             public string StudentCode { get; set; } = string.Empty; 
         }
 
-        // Model mới cho Trợ lý Gemini Chat (Đã có thêm SessionId)
         public class GeminiChatRequest
         {
             public int? SessionId { get; set; } 
@@ -127,9 +127,8 @@ namespace backend.Controllers
             return string.Empty;
         }
 
-
         // =================================================================
-        // API 1: PHÂN TÍCH LỖI VÀ CHAT VỚI AI (ĐÃ TÍCH HỢP RAG)
+        // API 1: PHÂN TÍCH LỖI VÀ CHAT VỚI AI (ĐÃ TÍCH HỢP RAG ĐƯỢC TỐI ƯU)
         // =================================================================
         [HttpPost("analyze")]
         public async Task<IActionResult> AnalyzeCode([FromBody] AIRequest request)
@@ -141,10 +140,10 @@ namespace backend.Controllers
             }
 
             // ==============================================================================
-            // 🌟 PHÉP THUẬT RAG Ở ĐÂY: LẤY "BÍ KÍP" TỪ GIẢNG VIÊN TRONG DATABASE
+            // 🌟 ĐÃ FIX LỖI RÒ RỈ TOKEN: CHỈ LẤY BÍ KÍP CỦA ĐÚNG BÀI TẬP NÀY
             // ==============================================================================
             var lecturerHints = _context.AICorrections
-                .Where(c => c.IsResolved == true && !string.IsNullOrEmpty(c.LecturerHint))
+                .Where(c => c.ExerciseId == request.ExerciseId && c.IsResolved == true && !string.IsNullOrEmpty(c.LecturerHint))
                 .Select(c => c.LecturerHint)
                 .ToList();
 
@@ -294,7 +293,6 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
             }
         }
 
-      
         // =================================================================
         // API 2: TẠO BÀI GIẢNG CHUẨN BỊ KIẾN THỨC
         // =================================================================
@@ -700,6 +698,32 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
                 await _context.SaveChangesAsync();
             }
             return Ok(new { success = true });
+        }
+        // =================================================================
+        // API 12: SINH MINDMAP TRỰC TIẾP TỪ TEXT (DÙNG CHO TRANG AI LESSON)
+        // =================================================================
+        public class DirectMindmapRequest
+        {
+            public string Content { get; set; } = string.Empty;
+        }
+
+        [HttpPost("generate-direct-mindmap")]
+        public async Task<IActionResult> GenerateDirectMindmap([FromBody] DirectMindmapRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Content))
+                return BadRequest(new { success = false, message = "Nội dung trống." });
+
+            try
+            {
+                // Gọi thẳng cái service mà tụi mình đã dày công viết hôm qua
+                string mermaidCode = await _geminiService.GenerateLessonMindmapAsync("Tóm tắt bài giảng AI", request.Content);
+                
+                return Ok(new { success = true, mindmapCode = mermaidCode });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi sinh Mindmap: " + ex.Message });
+            }
         }
     }
 }
