@@ -94,15 +94,19 @@ const Workspace = () => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const exerciseId = searchParams.get("id") || location.pathname.split('/').pop();
+  
+  // 🌟 BIẾN ĐỂ BẮT SÓNG LỆNH ÔN TẬP TỪ DASHBOARD
+  const reviewId = searchParams.get("reviewId");
+  const mode = searchParams.get("mode");
 
   const pastCode = location.state?.pastCode;
   const pastLanguage = location.state?.pastLanguage;
   
-  const isAIGenerated = location.state?.isAIGenerated;
+  const [isAIGenerated, setIsAIGenerated] = useState(location.state?.isAIGenerated || false);
   const aiExerciseData = location.state?.exerciseData;
 
-  const draftKey = `draft_code_exercise_${exerciseId}`;
-  const savedDraft = exerciseId ? localStorage.getItem(draftKey) : null;
+  const draftKey = `draft_code_exercise_${exerciseId || reviewId}`;
+  const savedDraft = (exerciseId || reviewId) ? localStorage.getItem(draftKey) : null;
 
   const [language, setLanguage] = useState(pastLanguage || "python");
   const [code, setCode] = useState(pastCode || savedDraft || defaultTemplates[pastLanguage || "python"]);
@@ -149,12 +153,70 @@ const Workspace = () => {
 
   useEffect(() => {
     const isDefaultCode = Object.values(defaultTemplates).includes(code);
-    if (exerciseId && !isDefaultCode && code.trim() !== "") {
-      localStorage.setItem(`draft_code_exercise_${exerciseId}`, code);
+    if ((exerciseId || reviewId) && !isDefaultCode && code.trim() !== "") {
+      localStorage.setItem(`draft_code_exercise_${exerciseId || reviewId}`, code);
     }
-  }, [code, exerciseId]);
+  }, [code, exerciseId, reviewId]);
 
+  // =================================================================
+  // 🌟 LOGIC: NẾU ĐÂY LÀ CHẾ ĐỘ ÔN TẬP, TỰ ĐỘNG GỌI AI VIẾT LẠI ĐỀ
+  // =================================================================
   useEffect(() => {
+    if (mode === "adaptive-review" && reviewId) {
+      setIsLoading(true);
+      const fetchSpacedRepetitionExercise = async () => {
+        try {
+          // 1. Lấy thông tin bài tập cũ
+          const originalRes = await fetch(`${API_BASE_URL}/api/Exercises/${reviewId}`);
+          const originalEx = await originalRes.json();
+          
+          // 2. Chọc API nhờ AI viết lại đề
+          const response = await fetch(`${API_BASE_URL}/api/AIAssistant/generate-exercise`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({
+              Language: "Python", // Sẽ update sau
+              Topic: `Ôn tập lại bài toán: ${originalEx.title}. Yêu cầu: Hãy giữ nguyên thuật toán cốt lõi và các test cases, nhưng viết lại một cốt truyện hoàn toàn mới lạ.`,
+              Difficulty: originalEx.difficulty,
+              StudentEmail: userEmail 
+            })
+          });
+
+          const data = await response.json();
+          if (data.success) {
+            // Ép hệ thống coi đây là bài tập AI Generate để xài chung hàm chấm
+            setIsAIGenerated(true);
+            setExercise({
+              id: originalEx.id, 
+              lessonId: originalEx.lessonId,
+              title: `[ÔN TẬP] ${data.data.Title}`,
+              description: data.data.Description,
+              difficulty: originalEx.difficulty,
+              testCases: originalEx.testCases, // BẮT BUỘC DÙNG LẠI TEST CASE CŨ ĐỂ CHẤM
+              starterCode: data.data.StarterCode || originalEx.starterCode
+            });
+            
+            if (!savedDraft && !pastCode) {
+              setCode(data.data.StarterCode || originalEx.starterCode || defaultTemplates.python);
+            }
+          }
+        } catch (error) {
+          console.error("Lỗi AI làm mới đề bài:", error);
+          toast({ title: "Lỗi", description: "Không thể gọi AI làm mới đề bài. Đang hiện bài cũ.", variant: "destructive" });
+          // Nếu AI tèo, rớt về bài cũ
+          fetch(`${API_BASE_URL}/api/Exercises/${reviewId}`)
+            .then(res => res.json())
+            .then(data => setExercise(data));
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      fetchSpacedRepetitionExercise();
+      return; 
+    }
+
+    // Logic cũ nếu là bài AI thường hoặc bài hệ thống
     if (isAIGenerated && aiExerciseData) {
       const exTitle = aiExerciseData.title || aiExerciseData.Title || "Bài tập AI";
       const exDesc = aiExerciseData.description || aiExerciseData.Description || "Không có mô tả";
@@ -168,7 +230,7 @@ const Workspace = () => {
         title: exTitle,
         description: exDesc,
         difficulty: exDiff,
-        testCases: JSON.stringify(exTests),
+        testCases: typeof exTests === 'string' ? exTests : JSON.stringify(exTests),
         starterCode: exStarterCode
       });
       
@@ -192,7 +254,7 @@ const Workspace = () => {
           setIsLoading(false);
         });
     }
-  }, [exerciseId, isAIGenerated, aiExerciseData, savedDraft, pastCode]);
+  }, [exerciseId, reviewId, mode, isAIGenerated, aiExerciseData, savedDraft, pastCode, token, userEmail]);
 
   const handleLanguageChange = (newLang: string) => {
     const isDefaultCode = Object.values(defaultTemplates).includes(code);
@@ -231,9 +293,10 @@ const Workspace = () => {
     setActiveTab("grading");
     setSubmitResult(null);
 
+    // Xử lý nộp bài cho Bài AI tạo / Bài Ôn Tập (Cùng xài chung logic này vì TestCases dạng JSON)
     if (isAIGenerated) {
       try {
-        const testCases = JSON.parse(exercise.testCases || "[]");
+        const testCases = typeof exercise.testCases === 'string' ? JSON.parse(exercise.testCases || "[]") : exercise.testCases;
         let passedCount = 0;
         const results = [];
 
@@ -260,12 +323,24 @@ const Workspace = () => {
           });
         }
 
+        const finalStatus = passedCount === testCases.length ? "Accepted" : "Wrong Answer";
+
         setSubmitResult({
-          status: passedCount === testCases.length ? "Accepted" : "Wrong Answer",
+          status: finalStatus,
           totalTests: testCases.length,
           passedTests: passedCount,
           results: results
         });
+
+        // 🌟 Nếu nộp thành công, gọi ngầm API báo cho backend tính SM-2
+        if (finalStatus === "Accepted" && mode === "adaptive-review" && reviewId) {
+           fetch(`${API_BASE_URL}/api/CodeExecution/submit`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({ language, code, exerciseId: Number(reviewId), userEmail })
+           });
+        }
+
       } catch (e) {
         setSubmitResult({ status: "Error", totalTests: 0, passedTests: 0, results: [], message: "Lỗi chạy Test Case" });
       } finally {
@@ -274,6 +349,7 @@ const Workspace = () => {
       return;
     }
 
+    // Xử lý nộp bài cho bài hệ thống bình thường
     try {
       const response = await fetch(`${API_BASE_URL}/api/CodeExecution/submit`, {
         method: "POST",
@@ -322,6 +398,7 @@ const Workspace = () => {
           language: language,
           errorOutput: output.includes("LỖI") ? output : "", 
           userQuestion: "",
+          exerciseId: exercise?.id || 0, // Bổ sung ExerciseId để tìm bí kíp
           exerciseTitle: exercise?.title || "",
           exerciseDescription: exercise?.description || ""
         }),
@@ -397,6 +474,7 @@ const Workspace = () => {
           language: language,
           errorOutput: output.includes("LỖI") ? output : "",
           userQuestion: userMsg,
+          exerciseId: exercise?.id || 0, // Bổ sung ExerciseId để tìm bí kíp
           exerciseTitle: exercise?.title || "",
           exerciseDescription: exercise?.description || "",
           chatHistory: currentHistory
@@ -487,13 +565,14 @@ const Workspace = () => {
           difficulty: exercise.difficulty || "Cơ bản",
           language: language,
           starterCode: exercise.starterCode || "",
-          testCases: exercise.testCases,
+          testCases: typeof exercise.testCases === 'string' ? exercise.testCases : JSON.stringify(exercise.testCases),
           contentType: "Exercise"
         })
       });
 
       if (response.ok) {
         setIsSaved(true);
+        toast({ title: "Thành công", description: "Đã lưu vào Thư viện AI cá nhân!" });
       }
     } catch (e) {
       console.error(e);

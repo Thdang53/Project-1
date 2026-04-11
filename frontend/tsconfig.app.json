@@ -22,6 +22,9 @@
     "noImplicitAny": false,
     "noFallthroughCasesInSwitch": false,
 
+    /* 🌟 Bỏ qua cảnh báo Deprecated của TypeScript mới */
+    "ignoreDeprecations": "5.0",
+
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

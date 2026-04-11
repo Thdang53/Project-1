@@ -11,28 +11,34 @@ namespace backend.Data
         public DbSet<Course> Courses { get; set; }
         public DbSet<Lesson> Lessons { get; set; }
         public DbSet<Exercise> Exercises { get; set; }
-        
-        // THÊM DÒNG NÀY VÀO ĐỂ EF BIẾT TẠO BẢNG USERPROFILES
         public DbSet<UserProfile> UserProfiles { get; set; }
-
-        // BẢNG MỚI: LƯU TRỮ LỊCH SỬ NỘP BÀI CỦA SINH VIÊN
         public DbSet<Submission> Submissions { get; set; }
-
-        // BẢNG MỚI: LƯU TRỮ BÍ KÍP RAG CỦA GIẢNG VIÊN & THÔNG BÁO CHO SINH VIÊN
         public DbSet<AICorrection> AICorrections { get; set; }
-
         public DbSet<GeminiSession> GeminiSessions { get; set; }
         public DbSet<GeminiMessage> GeminiMessages { get; set; }
 
+        // --- BỘ 3 BẢNG MỚI CHO GIAI ĐOẠN 1 ---
+        public DbSet<SpacedRepetition> SpacedRepetitions { get; set; }
+        public DbSet<Class> Classes { get; set; }
+        public DbSet<ClassStudent> ClassStudents { get; set; }
+
         public DbSet<Redemption> Redemptions { get; set; }
 
-        // Hàm này giữ lại nhưng để trống, dành cho các cấu hình nâng cao sau này nếu cần
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
             
-            // ĐÃ XÓA TOÀN BỘ SEED DATA. 
-            // Từ nay Khóa học và Bài học sẽ do Admin tự quản lý động trên Giao diện Web!
+            // Đảm bảo Mã tham gia lớp (JoinCode) là độc nhất
+            modelBuilder.Entity<Class>()
+                .HasIndex(c => c.JoinCode)
+                .IsUnique();
+
+            // 🌟 FIX LỖI: Ngăn chặn vòng lặp xóa dây chuyền (Multiple Cascade Paths)
+            modelBuilder.Entity<ClassStudent>()
+                .HasOne(cs => cs.Student)
+                .WithMany() 
+                .HasForeignKey(cs => cs.StudentId)
+                .OnDelete(DeleteBehavior.Restrict); // Cấm xóa tự động để tránh xung đột
         }
     }
 }

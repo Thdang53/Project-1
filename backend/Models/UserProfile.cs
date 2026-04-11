@@ -13,5 +13,12 @@ namespace backend.Models
         public string GithubUrl { get; set; } = string.Empty;
         public string Bio { get; set; } = string.Empty;
         public string ContactInfo { get; set; } = string.Empty;
+
+        // 🌟 BỔ SUNG 2 BIẾN NÀY ĐỂ AI CHẠY ĐỘNG CƠ ADAPTIVE (THÍCH ỨNG)
+        // Khẩu vị cốt truyện đề bài (Game, Kinh tế, Truyện tranh...)
+        public string? PreferredTopic { get; set; } 
+
+        // Trình độ do AI tự đánh giá (Cơ bản, Trung bình, OLP)
+        public string CurrentLevel { get; set; } = "Cơ bản";
     }
 }

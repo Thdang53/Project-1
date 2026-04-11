@@ -4,6 +4,10 @@ using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Models;
 using System.Security.Claims;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace backend.Controllers
 {
@@ -175,6 +179,33 @@ namespace backend.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // =================================================================
+        // 🌟 TÍNH NĂNG SRS: LẤY DANH SÁCH BÀI TẬP ĐẾN HẠN ÔN HÔM NAY
+        // =================================================================
+        [HttpGet("daily-reviews")]
+        public async Task<IActionResult> GetDailyReviews([FromQuery] string email)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (user == null) return Unauthorized(new { success = false, message = "User not found" });
+
+            var today = DateTime.UtcNow;
+
+            // Truy vấn các bài tập mà NextReviewDate <= Hôm nay
+            var dueReviews = await _context.SpacedRepetitions
+                .Include(s => s.Exercise) // Join với bảng Exercise để lấy tên bài
+                .Where(s => s.UserId == user.Id && s.NextReviewDate <= today)
+                .Select(s => new {
+                    s.ExerciseId,
+                    ExerciseTitle = s.Exercise!.Title,
+                    Difficulty = s.Exercise.Difficulty,
+                    s.Repetitions, // Số chuỗi thắng
+                    s.NextReviewDate
+                })
+                .ToListAsync();
+
+            return Ok(new { success = true, data = dueReviews });
         }
     }
 }

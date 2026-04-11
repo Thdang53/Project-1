@@ -62,8 +62,10 @@ namespace backend.Controllers
             public string StudentLevel { get; set; } = "Cơ bản"; 
         }
 
+        // 🌟 ĐÃ THÊM: StudentEmail để hệ thống quét Database
         public class GenerateExerciseRequest
         {
+            public string StudentEmail { get; set; } = string.Empty; 
             public string Language { get; set; } = string.Empty; 
             public string Topic { get; set; } = string.Empty;    
             public string Difficulty { get; set; } = string.Empty; 
@@ -356,7 +358,7 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
         }
 
         // =================================================================
-        // API 3: AI TỰ ĐỘNG TẠO BÀI TẬP VÀ TEST CASES CHUẨN JSON
+        // 🌟 BẢN CẬP NHẬT: AI TỰ ĐỘNG TẠO BÀI TẬP VỚI "KHIÊN CHỐNG CRASH"
         // =================================================================
         [HttpPost("generate-exercise")]
         public async Task<IActionResult> GenerateExercise([FromBody] GenerateExerciseRequest request)
@@ -364,23 +366,91 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
             string apiKey = GetRandomApiKey();
             if (string.IsNullOrEmpty(apiKey))
             {
-                return StatusCode(500, new { message = "Lỗi máy chủ: Chưa cấu hình danh sách Gemini API Keys." });
+                // Dùng Ok(success = false) để báo lỗi đẹp lên UI thay vì ném lỗi 500 sập web
+                return Ok(new { success = false, message = "Lỗi máy chủ: Chưa cấu hình danh sách Gemini API Keys." });
+            }
+
+            string preferredTopic = request.Topic;
+            string adaptiveDifficulty = request.Difficulty;
+            string aiDependencePrompt = "Không có lưu ý đặc biệt về mức độ hỗ trợ.";
+            string bigOPrompt = "Không yêu cầu khắt khe về thời gian chạy (Time Limit).";
+            string microSkillPrompt = "Hãy kiểm tra kiến thức tổng hợp của chủ đề này.";
+            string speedPrompt = "Tạo các Test Case tiêu chuẩn.";
+
+            // Bọc Try-Catch để nếu Database có lỗi (như chưa chạy Migration) thì tính năng tạo bài vẫn chạy bình thường!
+            try 
+            {
+                if (!string.IsNullOrEmpty(request.StudentEmail))
+                {
+                    var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.StudentEmail);
+                    if (user != null)
+                    {
+                        var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.Email == request.StudentEmail);
+                        if (profile != null && !string.IsNullOrWhiteSpace(profile.PreferredTopic))
+                        {
+                            preferredTopic = $"{request.Topic}, và HÃY LỒNG GHÉP CỐT TRUYỆN VỀ '{profile.PreferredTopic}' vào đề bài";
+                        }
+
+                        var sessionIds = await _context.GeminiSessions.Where(s => s.UserId == user.Id).Select(s => s.Id).ToListAsync();
+                        int aiChatCount = await _context.GeminiMessages.CountAsync(m => m.Role == "user" && sessionIds.Contains(m.SessionId));
+                        
+                        if (aiChatCount > 30)
+                        {
+                            aiDependencePrompt = "⚠️ Báo động: Sinh viên này đang có dấu hiệu ỷ lại AI quá nhiều. YÊU CẦU: Hãy chia phần mô tả bài toán thành 3 bước nhỏ (Step-by-step) thật dễ hiểu để dắt tay chỉ việc, giúp họ tự tin làm bài mà không cần hỏi thêm.";
+                        }
+
+                        var recentSubmissions = await _context.Submissions
+                            .Where(s => s.UserEmail == request.StudentEmail)
+                            .OrderByDescending(s => s.SubmittedAt)
+                            .Take(10).ToListAsync();
+
+                        if (recentSubmissions.Any())
+                        {
+                            int failedCount = recentSubmissions.Count(s => s.Status != "Accepted");
+
+                            if (failedCount > 7)
+                            {
+                                bigOPrompt = "⚠️ Cảnh báo: Sinh viên nộp bài sai quá nhiều lần. YÊU CẦU ĐẶC BIỆT: Hãy ép thời gian giới hạn (Time Limit) cực gắt (< 0.1s), và ra đề bài cấm tuyệt đối việc dùng 2 vòng lặp lồng nhau (O(n^2)) để buộc sinh viên phải suy nghĩ kĩ thuật toán trước khi nộp.";
+                            }
+
+                            if (failedCount >= 5 && failedCount <= 7)
+                            {
+                                microSkillPrompt = "⚠️ Sinh viên nộp bài sai khá nhiều ở các bài trước. YÊU CẦU: Tập trung kiểm tra kỹ năng xử lý Mảng (Array) và Ngoại lệ (Exception). Tạo 1 bài toán vá lỗi cơ bản.";
+                                speedPrompt = "Hãy tạo các Test Case số lượng nhỏ, giá trị dương, dễ hiểu để sinh viên dễ dàng pass và lấy lại động lực.";
+                            }
+                            else if (failedCount == 0 && recentSubmissions.Count >= 5)
+                            {
+                                speedPrompt = "🔥 Sinh viên này đang có chuỗi làm bài xuất sắc. YÊU CẦU: Hãy tạo thêm 2 Test Case ẩn CỰC KHÓ (Edge cases: mảng rỗng, số âm, số siêu lớn) để bẫy và thử thách sự cẩn thận của họ.";
+                            }
+                        }
+                    }
+                }
+            } 
+            catch (Exception) 
+            { 
+                // Bỏ qua lỗi quét Database, AI vẫn sẽ đẻ ra bài tập theo thông số mặc định.
             }
 
             string systemInstruction = $@"
-Bạn là một chuyên gia tạo đề thi lập trình CỰC KỲ SÁNG TẠO.
-Hãy tạo MỘT bài tập HOÀN TOÀN MỚI, ĐỘC ĐÁO VÀ CÓ TÍNH ỨNG DỤNG THỰC TẾ dựa trên yêu cầu sau.
-⚠️ TUYỆT ĐỐI KHÔNG tạo lại các bài tập nhàm chán như: Nhập tên tuổi in ra lời chào, tính tổng 2 số, hay Hello World. Hãy nghĩ ra một kịch bản thú vị hơn!
+Bạn là một chuyên gia tạo đề thi lập trình AI Learning Hub CỰC KỲ SÁNG TẠO.
+ĐÂY LÀ HỆ THỐNG THÍCH ỨNG SÂU (DEEP ADAPTIVE). BẠN PHẢI TUÂN THỦ NGHIÊM NGẶT HỒ SƠ NĂNG LỰC SAU:
 
 - Ngôn ngữ: {request.Language}
-- Chủ đề: {request.Topic}
-- Độ khó: {request.Difficulty}
+- Chủ đề gốc: {request.Topic}
+- Mức độ khó yêu cầu: {adaptiveDifficulty} (Bám sát mức độ này)
 
-YÊU CẦU TỐI THƯỢNG: Trả về dữ liệu bằng cấu trúc JSON sau đây:
+🔥 THÔNG TIN CÁ NHÂN HÓA DÀNH RIÊNG CHO SINH VIÊN NÀY (BẮT BUỘC ÁP DỤNG):
+1. [Sở thích / Cốt truyện]: {preferredTopic}
+2. [Điểm yếu kỹ năng]: {microSkillPrompt}
+3. [Hiệu suất thuật toán]: {bigOPrompt}
+4. [Tâm lý học tập]: {aiDependencePrompt}
+5. [Thử thách Test Case]: {speedPrompt}
+
+YÊU CẦU TỐI THƯỢNG: Trả về dữ liệu bằng đúng cấu trúc JSON sau đây:
 {{
-  ""Title"": ""Tên bài tập ngắn gọn, sáng tạo"",
-  ""Description"": ""Mô tả chi tiết bài toán, yêu cầu rõ ràng được lồng ghép vào một câu chuyện hoặc tình huống thực tế. Có ví dụ minh họa Input/Output."",
-  ""Difficulty"": ""{request.Difficulty}"",
+  ""Title"": ""Tên bài tập ngắn gọn, sáng tạo theo cốt truyện"",
+  ""Description"": ""Mô tả chi tiết bài toán, lồng ghép cốt truyện thật hấp dẫn. Có ví dụ minh họa Input/Output rõ ràng."",
+  ""Difficulty"": ""{adaptiveDifficulty}"",
   ""StarterCode"": ""Đoạn code template ban đầu (có sẵn hàm/class) bằng ngôn ngữ {request.Language} để sinh viên viết tiếp code vào đó"",
   ""TestCases"": [
     {{ ""Input"": ""Giá trị test"", ""ExpectedOutput"": ""Kết quả đúng"" }}
@@ -391,7 +461,7 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
             var payload = new
             {
                 systemInstruction = new { parts = new[] { new { text = systemInstruction } } },
-                contents = new[] { new { parts = new[] { new { text = $"Hãy sáng tạo một bài tập thật độc đáo về chủ đề '{request.Topic}' bằng ngôn ngữ {request.Language} ngay bây giờ." } } } },
+                contents = new[] { new { parts = new[] { new { text = $"Dựa vào 5 chỉ số năng lực của tôi, hãy tạo ra MỘT bài tập hoàn hảo, khớp 100% với trình độ của tôi ngay lúc này." } } } },
                 generationConfig = new { 
                     temperature = 0.7,
                     responseMimeType = "application/json" 
@@ -413,7 +483,7 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    return StatusCode((int)response.StatusCode, new { message = $"Lỗi từ Google Gemini: {responseString}" });
+                    return Ok(new { success = false, message = $"AI đang bận quá tải, hãy thử lại nhé! (Mã lỗi: {response.StatusCode})" });
                 }
 
                 using var doc = JsonDocument.Parse(responseString);
@@ -448,7 +518,7 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
                 }
                 catch (JsonException)
                 {
-                    return StatusCode(500, new { message = "AI trả về dữ liệu không đúng chuẩn JSON.", rawOutput = aiTextResponse });
+                    return Ok(new { success = false, message = "AI đang hơi lú lẫn trả về sai định dạng. Bạn chịu khó bấm Tạo Lại nha!" });
                 }
 
                 int fakeId = new Random().Next(1000, 9999); 
@@ -456,14 +526,14 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
                 return Ok(new 
                 { 
                     success = true, 
-                    message = "Tạo bài tập thành công!",
+                    message = "Tạo bài tập Adaptive thành công!",
                     exerciseId = fakeId, 
                     data = generatedExercise 
                 });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
+                return Ok(new { success = false, message = "Lỗi kết nối mạng: " + ex.Message });
             }
         }
 
@@ -699,6 +769,7 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
             }
             return Ok(new { success = true });
         }
+        
         // =================================================================
         // API 12: SINH MINDMAP TRỰC TIẾP TỪ TEXT (DÙNG CHO TRANG AI LESSON)
         // =================================================================

@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   LayoutDashboard, MessageSquareWarning, Clock, CheckCircle2, Eye, X, 
   Sparkles, Bot, Code2, Terminal, BookOpen, Trophy, History, Layers, 
-  FolderOpen, Wand2, Loader2, AlertCircle, BookHeart, Trash2, ChevronRight
+  FolderOpen, Wand2, Loader2, AlertCircle, BookHeart, Trash2, ChevronRight, Brain
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +17,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+
+// 🌟 THÊM IMPORT GÓC ÔN TẬP
+import DailyReviewsTab from "@/components/dashboard/DailyReviewsTab";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -151,9 +154,15 @@ const StudentDashboard = () => {
     if (!genTopic.trim()) return setGenError("Vui lòng nhập chủ đề!");
     setGenError(""); setIsGenerating(true);
     try {
+      // 🌟 KÍCH HOẠT ADAPTIVE ENGINE BẰNG CÁCH TRUYỀN THÊM StudentEmail
       const response = await fetch(`${API_BASE_URL}/api/AIAssistant/generate-exercise`, {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ Language: genLanguage, Topic: genTopic, Difficulty: genDifficulty })
+        body: JSON.stringify({ 
+          Language: genLanguage, 
+          Topic: genTopic, 
+          Difficulty: genDifficulty,
+          StudentEmail: user?.email // Thêm trường này để AI tự quét Hồ sơ năng lực
+        })
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -251,6 +260,10 @@ const StudentDashboard = () => {
               <Tabs defaultValue="exercises" className="space-y-8">
                 <TabsList className="bg-card border border-border">
                   <TabsTrigger value="exercises" className="gap-2"><BookOpen className="h-4 w-4" /> Lộ trình học</TabsTrigger>
+                  {/* 🌟 TAB MỚI: GÓC ÔN TẬP */}
+                  <TabsTrigger value="daily-reviews" className="gap-2 text-purple-600 data-[state=active]:text-purple-700 data-[state=active]:bg-purple-100/50">
+                    <Brain className="h-4 w-4" /> Góc Ôn Tập
+                  </TabsTrigger>
                   <TabsTrigger value="history" className="gap-2"><History className="h-4 w-4" /> Lịch sử nộp</TabsTrigger>
                   <TabsTrigger value="library" className="gap-2"><BookHeart className="h-4 w-4" /> Thư viện AI</TabsTrigger>
                 </TabsList>
@@ -315,6 +328,11 @@ const StudentDashboard = () => {
                       })}
                     </Tabs>
                   ) : (<div className="bg-card rounded-3xl border-2 border-dashed py-20 text-center"><p>Hệ thống chưa có dữ liệu...</p></div>)}
+                </TabsContent>
+
+                {/* 🌟 TAB GÓC ÔN TẬP */}
+                <TabsContent value="daily-reviews" className="focus:outline-none mt-6">
+                  <DailyReviewsTab />
                 </TabsContent>
 
                 {/* TAB LỊCH SỬ NỘP */}

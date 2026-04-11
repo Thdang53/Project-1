@@ -1,11 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization; // 💡 ĐÃ THÊM: Thư viện bảo mật phân quyền
+using Microsoft.AspNetCore.Authorization; 
 using Microsoft.AspNetCore.RateLimiting;
 using System.Diagnostics;
 using System.Text.Json;
 using backend.Models;
 using backend.Data;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace backend.Controllers
 {
@@ -34,11 +39,7 @@ namespace backend.Controllers
         {
             string fileExtension = request.Language switch
             {
-                "python" => "py",
-                "cpp" => "cpp",
-                "java" => "java",
-                "javascript" => "js",
-                _ => "txt"
+                "python" => "py", "cpp" => "cpp", "java" => "java", "javascript" => "js", _ => "txt"
             };
 
             if (fileExtension == "txt")
@@ -46,7 +47,6 @@ namespace backend.Controllers
                 return BadRequest(new { output = "Ngôn ngữ không được hỗ trợ." });
             }
 
-            // 💡 TỐI ƯU 1: TẠO THƯ MỤC CÁCH LY CHO MỖI LẦN CHẠY
             string executionId = Guid.NewGuid().ToString();
             string executionFolder = Path.Combine(_tempFolder, executionId);
             Directory.CreateDirectory(executionFolder);
@@ -61,11 +61,7 @@ namespace backend.Controllers
 
             string dockerImage = request.Language switch
             {
-                "python" => "python:3.9-slim",
-                "cpp" => "gcc:latest",
-                "java" => "openjdk:17-slim",
-                "javascript" => "node:18-slim",
-                _ => ""
+                "python" => "python:3.9-slim", "cpp" => "gcc:latest", "java" => "openjdk:17-slim", "javascript" => "node:18-slim", _ => ""
             };
 
             string command = request.Language switch
@@ -82,7 +78,6 @@ namespace backend.Controllers
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "docker",
-                    // 💡 TỐI ƯU 2: GIỚI HẠN RAM (256MB) VÀ CPU (0.5) ĐỂ CHỐNG "BOM RAM" + CHẶN MẠNG
                     Arguments = $"run --rm --network none --memory=\"256m\" --cpus=\"0.5\" -v \"{executionFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -123,7 +118,6 @@ namespace backend.Controllers
             }
             finally
             {
-                // 💡 TỐI ƯU 3: DỌN RÁC
                 if (Directory.Exists(executionFolder))
                 {
                     Directory.Delete(executionFolder, true);
@@ -132,11 +126,11 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // 2. HÀM NỘP BÀI VÀ CHẤM ĐIỂM (CÓ LƯU VÀO DATABASE)
+        // 2. HÀM NỘP BÀI VÀ CHẤM ĐIỂM (CÓ LƯU VÀO DATABASE + SM-2)
         // ==========================================
         [HttpPost("submit")]
-        [Authorize] // 💡 ĐÃ THÊM: Chỉ có sinh viên đăng nhập mới được phép gọi API nộp bài (tránh spam)
-        [EnableRateLimiting("ChongSpamCode")] // 💡 Gắn khiên chống Spam vào đây
+        [Authorize] 
+        [EnableRateLimiting("ChongSpamCode")] 
         public async Task<IActionResult> SubmitCode([FromBody] SubmitCodeRequest request)
         {
             var exercise = await _context.Exercises.FindAsync(request.ExerciseId);
@@ -157,7 +151,7 @@ namespace backend.Controllers
 
             if (testCases == null) return BadRequest(new { message = "Lỗi khi đọc Test Cases." });
 
-            // 💡 TỐI ƯU 4: CHẠY TEST CASE SONG SONG (PARALLEL)
+            // 💡 CHẠY TEST CASE SONG SONG
             var tasks = testCases.Select(async (tc, index) =>
             {
                 var execResult = await RunCodeInDockerAsync(request.Language, request.Code, tc.Input);
@@ -174,7 +168,8 @@ namespace backend.Controllers
                     Passed = passed,
                     Input = tc.Input,
                     ExpectedOutput = tc.ExpectedOutput,
-                    ActualOutput = execResult.IsError ? execResult.Error : execResult.Output.Trim()
+                    ActualOutput = execResult.IsError ? execResult.Error : execResult.Output.Trim(),
+                    ExecutionTime = execResult.ExecutionTime // 🌟 THÊM MỚI: Lấy thời gian chạy
                 };
             });
 
@@ -184,24 +179,70 @@ namespace backend.Controllers
             bool allPassed = results.All(r => r.Passed);
             int passedCount = results.Count(r => r.Passed);
             string finalStatus = allPassed ? "Accepted" : "Wrong Answer";
-
+            
             // LƯU KẾT QUẢ VÀO SQL SERVER
             if (!string.IsNullOrEmpty(request.UserEmail))
             {
-                var submission = new Submission
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.UserEmail);
+                if (user != null)
                 {
-                    UserEmail = request.UserEmail,
-                    ExerciseId = request.ExerciseId,
-                    Language = request.Language,
-                    Code = request.Code,
-                    Status = finalStatus,
-                    PassedTests = passedCount,
-                    TotalTests = testCases.Count,
-                    SubmittedAt = DateTime.UtcNow
-                };
+                    var submission = new Submission
+                    {
+                        UserEmail = request.UserEmail,
+                        ExerciseId = request.ExerciseId,
+                        Language = request.Language,
+                        Code = request.Code,
+                        Status = finalStatus,
+                        PassedTests = passedCount,
+                        TotalTests = testCases.Count,
+                        SubmittedAt = DateTime.UtcNow
+                    };
 
-                _context.Submissions.Add(submission);
-                await _context.SaveChangesAsync();
+                    _context.Submissions.Add(submission);
+
+                    // ========================================================
+                    // 🌟 THÊM MỚI: THUẬT TOÁN CHỐNG QUÊN (SPACED REPETITION SM-2)
+                    // ========================================================
+                    var srsRecord = await _context.SpacedRepetitions
+                        .FirstOrDefaultAsync(s => s.UserId == user.Id && s.ExerciseId == request.ExerciseId);
+
+                    if (srsRecord == null)
+                    {
+                        srsRecord = new SpacedRepetition
+                        {
+                            UserId = user.Id,
+                            ExerciseId = request.ExerciseId,
+                            Repetitions = 0,
+                            EaseFactor = 2.5,
+                            Interval = 0,
+                            NextReviewDate = DateTime.UtcNow
+                        };
+                        _context.SpacedRepetitions.Add(srsRecord);
+                    }
+
+                    if (allPassed)
+                    {
+                        // Sinh viên làm ĐÚNG -> Tăng khoảng cách ngày ôn
+                        srsRecord.Repetitions++;
+                        srsRecord.EaseFactor = Math.Max(1.3, srsRecord.EaseFactor + 0.1); 
+                        
+                        if (srsRecord.Repetitions == 1) srsRecord.Interval = 1; // Nhắc lại sau 1 ngày
+                        else if (srsRecord.Repetitions == 2) srsRecord.Interval = 3; // Lần 2 nhắc sau 3 ngày
+                        else srsRecord.Interval = (int)Math.Round(srsRecord.Interval * srsRecord.EaseFactor); // Cấp số nhân
+                    }
+                    else
+                    {
+                        // Sinh viên làm SAI -> Bắt ôn ngay ngày mai
+                        srsRecord.Repetitions = 0;
+                        srsRecord.Interval = 1;    
+                        srsRecord.EaseFactor = Math.Max(1.3, srsRecord.EaseFactor - 0.2); 
+                    }
+
+                    srsRecord.NextReviewDate = DateTime.UtcNow.AddDays(srsRecord.Interval);
+                    // ========================================================
+
+                    await _context.SaveChangesAsync();
+                }
             }
 
             return Ok(new
@@ -233,17 +274,13 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // HÀM CHẠY NGẦM CHO TEST CASES
+        // 🌟 THÊM MỚI: HÀM CHẠY NGẦM CHO TEST CASES (CÓ ĐO THỜI GIAN)
         // ==========================================
-        private async Task<(string Output, string Error, bool IsError)> RunCodeInDockerAsync(string language, string code, string input)
+        private async Task<(string Output, string Error, bool IsError, double ExecutionTime)> RunCodeInDockerAsync(string language, string code, string input)
         {
              string fileExtension = language switch
             {
-                "python" => "py",
-                "cpp" => "cpp",
-                "java" => "java",
-                "javascript" => "js",
-                _ => "txt"
+                "python" => "py", "cpp" => "cpp", "java" => "java", "javascript" => "js", _ => "txt"
             };
 
             string executionId = Guid.NewGuid().ToString();
@@ -260,11 +297,7 @@ namespace backend.Controllers
 
             string dockerImage = language switch
             {
-                "python" => "python:3.9-slim",
-                "cpp" => "gcc:latest",
-                "java" => "openjdk:17-slim",
-                "javascript" => "node:18-slim",
-                _ => ""
+                "python" => "python:3.9-slim", "cpp" => "gcc:latest", "java" => "openjdk:17-slim", "javascript" => "node:18-slim", _ => ""
             };
 
             string command = language switch
@@ -276,12 +309,12 @@ namespace backend.Controllers
                 _ => ""
             };
 
+            var sw = Stopwatch.StartNew(); // 🌟 Bắt đầu bấm giờ
             try
             {
                 var processStartInfo = new ProcessStartInfo
                 {
                     FileName = "docker",
-                    // 💡 TỐI ƯU 2: GIỚI HẠN RAM/CPU Ở TRONG TIẾN TRÌNH TEST CASE NGẦM NÀY NỮA
                     Arguments = $"run --rm --network none --memory=\"256m\" --cpus=\"0.5\" -v \"{executionFolder}:/app\" -w /app {dockerImage} sh -c \"{command}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -290,24 +323,25 @@ namespace backend.Controllers
                 };
 
                 using var process = Process.Start(processStartInfo);
-                if (process == null) return ("", "Không thể khởi động Sandbox.", true);
+                if (process == null) return ("", "Không thể khởi động Sandbox.", true, 0);
 
                 if (!process.WaitForExit(15000))
                 {
                     process.Kill();
-                    return ("", "Time Limit Exceeded", true);
+                    return ("", "Time Limit Exceeded", true, 15.0);
                 }
 
+                sw.Stop(); // 🌟 Dừng bấm giờ
                 string output = await process.StandardOutput.ReadToEndAsync();
                 string error = await process.StandardError.ReadToEndAsync();
 
-                if (!string.IsNullOrEmpty(error)) return ("", error, true);
+                if (!string.IsNullOrEmpty(error)) return ("", error, true, sw.Elapsed.TotalSeconds);
 
-                return (output, "", false);
+                return (output, "", false, sw.Elapsed.TotalSeconds);
             }
             catch (Exception ex)
             {
-                return ("", ex.Message, true);
+                return ("", ex.Message, true, sw.Elapsed.TotalSeconds);
             }
             finally
             {
@@ -340,5 +374,6 @@ namespace backend.Controllers
         public string Input { get; set; } = string.Empty;
         public string ExpectedOutput { get; set; } = string.Empty;
         public string ActualOutput { get; set; } = string.Empty;
+        public double ExecutionTime { get; set; } // 🌟 LƯU THỜI GIAN
     }
 }
