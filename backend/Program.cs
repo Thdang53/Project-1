@@ -51,6 +51,8 @@ builder.Services.AddSwaggerGen();
 // Đăng ký HttpClient và Service AI Copilot
 builder.Services.AddHttpClient<backend.Services.GeminiAssistantService>();
 builder.Services.AddScoped<backend.Services.GeminiAssistantService>();
+// Đăng ký Service AI Cố vấn Học thuật
+builder.Services.AddScoped<backend.Services.AcademicAdvisorService>();
 
 // ==========================================
 // 4. MỞ KHÓA CORS CHO FRONTEND (CẬP NHẬT)

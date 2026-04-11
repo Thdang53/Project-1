@@ -100,7 +100,7 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
           </span>
         </Link>
 
-        {/* CÁC MENU ĐIỀU HƯỚNG (ĐÃ ĐỒNG BỘ MÀU 100%) */}
+        {/* CÁC MENU ĐIỀU HƯỚNG (ĐÃ BỔ SUNG TRANG LỚP HỌC) */}
         <div className="hidden md:flex items-center gap-8">
           <Link to="/" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
             Trang chủ
@@ -109,15 +109,23 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
           <Link to="/student-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
             Không gian học tập
           </Link>
+
+          {/* NÚT LỚP HỌC (HIỂN THỊ CHO TẤT CẢ MỌI NGƯỜI ĐÃ ĐĂNG NHẬP) */}
+          {user && (
+            <Link to="/classrooms" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+              Lớp học
+            </Link>
+          )}
           
+          {/* MENU DÀNH RIÊNG CHO GIẢNG VIÊN / ADMIN */}
           {(user?.role === "Lecturer" || user?.role === "Admin") && (
             <>
               <Link to="/lecturer-dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                Giảng viên
+                Giải đáp thắc mắc
               </Link>
               
               <Link to="/dashboard" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                Quản lý Khóa học
+                Quản trị Hệ thống
               </Link>
             </>
           )}

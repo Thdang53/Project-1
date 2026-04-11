@@ -18,6 +18,8 @@ import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import AILesson from "./pages/AILesson";
+import Classrooms from "./pages/Classrooms";
+import ClassDetail from "./pages/ClassDetail";
 
 const queryClient = new QueryClient();
 
@@ -79,7 +81,8 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-
+            <Route path="/classrooms" element={<ProtectedRoute><Classrooms /></ProtectedRoute>} />    
+            <Route path="/classrooms/:id" element={<ProtectedRoute><ClassDetail /></ProtectedRoute>} />          
             {/* ========================================== */}
             {/* KHU VỰC QUẢN LÝ (CHỈ DÀNH CHO LECTURER VÀ ADMIN) */}
             {/* ========================================== */}
