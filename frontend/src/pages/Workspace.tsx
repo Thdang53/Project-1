@@ -691,7 +691,7 @@ const Workspace = () => {
           />
         </div>
 
-        {/* SỬ DỤNG RIGHT PANEL ĐÃ TÁCH Ở ĐÂY */}
+        {/* 🌟 ĐÃ FIX LỖI TYPESCRIPT CHO EXERCISE ID Ở ĐÂY */}
         <RightPanel 
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -705,6 +705,9 @@ const Workspace = () => {
           defaultAiFeedback={defaultAiFeedback}
           MarkdownComponents={MarkdownComponents}
           handleReportAI={handleReportAI}
+          exerciseId={Number(exerciseId) || 0} // Ép sang số hoặc lấy 0 làm fallback an toàn
+          userEmail={userEmail}   
+          token={token}
         />
       </div>
     </div>

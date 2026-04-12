@@ -30,6 +30,13 @@ namespace backend.Models
         public int PassedTests { get; set; }
         public int TotalTests { get; set; }
 
+        // --- NEW: CHỈ SỐ ĐỂ AI ĐÁNH GIÁ CHUẨN BIG-O (KỸ NĂNG 4) ---
+        // Thời gian chạy thực tế tính bằng milliseconds
+        public long ExecutionTime { get; set; } 
+        
+        // Bộ nhớ tiêu thụ tính bằng KB
+        public long MemoryUsage { get; set; }   
+
         // Thời gian nộp bài
         public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
 

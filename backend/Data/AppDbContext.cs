@@ -26,6 +26,7 @@ namespace backend.Data
         public DbSet<AdvisorChat> AdvisorChats { get; set; }
         public DbSet<AdvisorSession> AdvisorSessions { get; set; }
         
+        public DbSet<StudentActivity> StudentActivities { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

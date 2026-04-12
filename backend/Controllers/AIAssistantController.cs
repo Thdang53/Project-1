@@ -48,7 +48,6 @@ namespace backend.Controllers
             public string Language { get; set; } = "python";
             public string ErrorOutput { get; set; } = string.Empty; 
             public string UserQuestion { get; set; } = string.Empty; 
-            // 🚀 THÊM ExerciseId VÀO ĐÂY ĐỂ NHẬN DIỆN BÀI TẬP TỪ FRONTEND
             public int ExerciseId { get; set; } 
             public string ExerciseTitle { get; set; } = string.Empty;
             public string ExerciseDescription { get; set; } = string.Empty;
@@ -62,7 +61,6 @@ namespace backend.Controllers
             public string StudentLevel { get; set; } = "Cơ bản"; 
         }
 
-        // 🌟 ĐÃ THÊM: StudentEmail để hệ thống quét Database
         public class GenerateExerciseRequest
         {
             public string StudentEmail { get; set; } = string.Empty; 
@@ -141,9 +139,6 @@ namespace backend.Controllers
                 return StatusCode(500, new { feedback = "Lỗi máy chủ: Chưa cấu hình danh sách Gemini API Keys." });
             }
 
-            // ==============================================================================
-            // 🌟 ĐÃ FIX LỖI RÒ RỈ TOKEN: CHỈ LẤY BÍ KÍP CỦA ĐÚNG BÀI TẬP NÀY
-            // ==============================================================================
             var lecturerHints = _context.AICorrections
                 .Where(c => c.ExerciseId == request.ExerciseId && c.IsResolved == true && !string.IsNullOrEmpty(c.LecturerHint))
                 .Select(c => c.LecturerHint)
@@ -158,7 +153,6 @@ namespace backend.Controllers
                     ragContext += $"- {hint}\n";
                 }
             }
-            // ==============================================================================
 
             string systemInstruction = $@"
 Bạn là 'InnoX AI' - Trợ giảng lập trình tận tâm của hệ thống AI Learning Hub.
@@ -166,8 +160,8 @@ Nhiệm vụ của bạn là hỗ trợ sinh viên làm bài tập: '{request.Ex
 Ngôn ngữ lập trình: {request.Language}.
 
 QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
-1. ĐI THẲNG VÀO VẤN ĐỀ: TUYỆT ĐỐI KHÔNG dùng các câu chào hỏi (như 'Chào bạn', 'Xin chào', 'Dạ'). KHÔNG nói các câu rườm rà ở đầu và cuối. Bắt đầu ngay lập tức vào việc phân tích hoặc gợi ý.
-2. TUYỆT ĐỐI KHÔNG viết sẵn toàn bộ code giải bài. Nếu sinh viên yêu cầu giải giùm, hãy từ chối khéo léo. Chỉ đưa ra gợi ý (hint) và hướng tư duy.
+1. ĐI THẲNG VÀO VẤN ĐỀ: Bắt đầu ngay lập tức vào việc phân tích hoặc gợi ý.
+2. TUYỆT ĐỐI KHÔNG viết sẵn toàn bộ code giải bài. Chỉ đưa ra gợi ý (hint) và hướng tư duy.
 3. Phân tích lỗi (nếu có: {request.ErrorOutput}) thật ngắn gọn, đi thẳng vào nguyên nhân cốt lõi.
 4. Trình bày câu trả lời bằng Markdown ĐẸP MẮT.
 5. Xưng hô là 'Mình' và gọi sinh viên là 'Bạn'. Luôn giữ thái độ thân thiện, khích lệ.
@@ -358,7 +352,7 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
         }
 
         // =================================================================
-        // 🌟 BẢN CẬP NHẬT: AI TỰ ĐỘNG TẠO BÀI TẬP VỚI "KHIÊN CHỐNG CRASH"
+        // API 3: AI TỰ ĐỘNG TẠO BÀI TẬP VỚI "KHIÊN CHỐNG CRASH"
         // =================================================================
         [HttpPost("generate-exercise")]
         public async Task<IActionResult> GenerateExercise([FromBody] GenerateExerciseRequest request)
@@ -366,7 +360,6 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
             string apiKey = GetRandomApiKey();
             if (string.IsNullOrEmpty(apiKey))
             {
-                // Dùng Ok(success = false) để báo lỗi đẹp lên UI thay vì ném lỗi 500 sập web
                 return Ok(new { success = false, message = "Lỗi máy chủ: Chưa cấu hình danh sách Gemini API Keys." });
             }
 
@@ -377,7 +370,6 @@ QUY TẮC NGHIÊM NGẶT CỦA TRỢ GIẢNG:
             string microSkillPrompt = "Hãy kiểm tra kiến thức tổng hợp của chủ đề này.";
             string speedPrompt = "Tạo các Test Case tiêu chuẩn.";
 
-            // Bọc Try-Catch để nếu Database có lỗi (như chưa chạy Migration) thì tính năng tạo bài vẫn chạy bình thường!
             try 
             {
                 if (!string.IsNullOrEmpty(request.StudentEmail))
@@ -581,7 +573,6 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
             var user = _context.Users.FirstOrDefault(u => u.Email == email);
             if (user == null) return Unauthorized();
 
-            // Lấy các báo cáo ĐÃ ĐƯỢC GIẢNG VIÊN DUYỆT (IsResolved = true) của sinh viên này
             var notifications = _context.AICorrections
                 .Where(c => c.StudentId == user.Id && c.IsResolved == true)
                 .OrderByDescending(c => c.CreatedAt)
@@ -786,7 +777,6 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
 
             try
             {
-                // Gọi thẳng cái service mà tụi mình đã dày công viết hôm qua
                 string mermaidCode = await _geminiService.GenerateLessonMindmapAsync("Tóm tắt bài giảng AI", request.Content);
                 
                 return Ok(new { success = true, mindmapCode = mermaidCode });
@@ -794,6 +784,91 @@ Lưu ý: Sinh ra ít nhất 3 Test Cases để chấm điểm.";
             catch (Exception ex)
             {
                 return StatusCode(500, new { success = false, message = "Lỗi sinh Mindmap: " + ex.Message });
+            }
+        }
+
+        // =================================================================
+        // 🌟 API 13: KỸ NĂNG 4 - AI SOI CHUẨN BIG-O (PHÂN TÍCH HIỆU SUẤT)
+        // =================================================================
+        public class BigORequest
+        {
+            public string UserEmail { get; set; } = string.Empty;
+            public int ExerciseId { get; set; }
+        }
+
+        [HttpPost("analyze-big-o")]
+        [Authorize]
+        public async Task<IActionResult> AnalyzeBigO([FromBody] BigORequest request)
+        {
+            string apiKey = GetRandomApiKey();
+            if (string.IsNullOrEmpty(apiKey))
+                return StatusCode(500, new { success = false, message = "Chưa cấu hình API Key." });
+
+            try
+            {
+                // 1. Mò vào Database, tìm bài nộp "Accepted" mới nhất của sinh viên này
+                var latestSubmission = await _context.Submissions
+                    .Where(s => s.UserEmail == request.UserEmail && s.ExerciseId == request.ExerciseId && s.Status == "Accepted")
+                    .OrderByDescending(s => s.SubmittedAt)
+                    .FirstOrDefaultAsync();
+
+                if (latestSubmission == null)
+                {
+                    return Ok(new { success = false, message = "Bạn cần nộp bài và đạt 'Accepted' trước khi nhờ AI chấm chuẩn Big-O." });
+                }
+
+                // 2. Đóng gói mã nguồn và thông số ExecutionTime, MemoryUsage để gửi cho AI
+                string systemPrompt = @"Bạn là Giám Khảo Thuật Toán Khắt Khe. 
+                Nhiệm vụ của bạn là nhận mã nguồn của sinh viên (đã chạy đúng kết quả) kèm theo thời gian chạy (ExecutionTime) và bộ nhớ (MemoryUsage).
+                Hãy phân tích:
+                1. Độ phức tạp thời gian (Big-O Time Complexity) của đoạn code là gì? (VD: O(N), O(N^2)).
+                2. Độ phức tạp không gian (Big-O Space Complexity) là gì?
+                3. Đưa ra 1 gợi ý NGẮN GỌN để tối ưu thuật toán (VD: Nên dùng Hash Map thay vì Vòng lặp lồng nhau).
+                
+                Trả lời ngắn gọn, format Markdown, nhấn mạnh vào các chỉ số Big-O.";
+
+                string userPrompt = $@"
+                Ngôn ngữ: {latestSubmission.Language}
+                Thời gian chạy thực tế (Max Test Case): {latestSubmission.ExecutionTime} ms
+                Bộ nhớ tiêu thụ ước tính: {latestSubmission.MemoryUsage} KB
+                
+                Mã nguồn của tôi:
+                ```
+                {latestSubmission.Code}
+                ```
+                Hãy soi chuẩn Big-O giúp tôi!";
+
+                var payload = new
+                {
+                    systemInstruction = new { parts = new[] { new { text = systemPrompt } } },
+                    contents = new[] { new { parts = new[] { new { text = userPrompt } } } },
+                    generationConfig = new { temperature = 0.3 } 
+                };
+
+                var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                var uriBuilder = new UriBuilder("https", "generativelanguage.googleapis.com");
+                uriBuilder.Path = "/v1beta/models/gemini-2.5-flash:generateContent";
+                uriBuilder.Query = $"key={apiKey}";
+
+                var requestMessage = new HttpRequestMessage(HttpMethod.Post, uriBuilder.Uri) { Content = content };
+                using var response = await _httpClient.SendAsync(requestMessage);
+
+                if (!response.IsSuccessStatusCode)
+                    return StatusCode((int)response.StatusCode, new { success = false, message = "AI đang bận, vui lòng thử lại sau." });
+
+                string responseString = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+                string aiTextResponse = root.GetProperty("candidates")[0]
+                                            .GetProperty("content")
+                                            .GetProperty("parts")[0]
+                                            .GetProperty("text").GetString() ?? "";
+
+                return Ok(new { success = true, report = aiTextResponse });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi hệ thống: " + ex.Message });
             }
         }
     }

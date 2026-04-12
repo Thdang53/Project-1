@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Users, PlusCircle, BrainCircuit, Send, Loader2, AlertTriangle, FileWarning, Sparkles, UserCheck, MessageSquare, LogIn, ArrowRight, GraduationCap, BookOpen } from "lucide-react";
+// 🌟 ĐÃ THÊM ICON RADAR VÀO ĐÂY
+import { Users, PlusCircle, BrainCircuit, Send, Loader2, AlertTriangle, FileWarning, Sparkles, UserCheck, MessageSquare, LogIn, ArrowRight, GraduationCap, BookOpen, Radar } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
@@ -111,6 +112,37 @@ const Classrooms = () => {
       if (data.success) setChatMessages(prev => [...prev, { role: "ai", content: data.reply }]);
       else setChatMessages(prev => [...prev, { role: "ai", content: "❌ Lỗi: " + data.message }]);
     } catch (error) { setChatMessages(prev => [...prev, { role: "ai", content: "❌ Mất kết nối." }]); } finally { setIsChatting(false); }
+  };
+
+  // ==========================================
+  // 🌟 HÀM KÍCH HOẠT RADAR (KỸ NĂNG 3)
+  // ==========================================
+  const handleRadarScan = async () => {
+    if (!selectedClass || isChatting) return;
+
+    // Gửi lệnh ảo lên màn hình chat để báo hiệu đang quét
+    const promptMessage = "📡 Hãy quét Radar và báo cáo tình hình sinh viên yếu kém hiện tại.";
+    setChatMessages(prev => [...prev, { role: "user", content: promptMessage }]);
+    setIsChatting(true);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/Advisor/radar-scan`, {
+        method: "POST", 
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ ClassId: selectedClass.id })
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+         setChatMessages(prev => [...prev, { role: "ai", content: data.reply }]);
+      } else {
+         setChatMessages(prev => [...prev, { role: "ai", content: "❌ Lỗi quét Radar: " + data.message }]);
+      }
+    } catch (error) { 
+      setChatMessages(prev => [...prev, { role: "ai", content: "❌ Mất kết nối khi quét Radar." }]); 
+    } finally { 
+      setIsChatting(false); 
+    }
   };
 
   // ============ CHỨC NĂNG SINH VIÊN ============
@@ -234,7 +266,18 @@ const Classrooms = () => {
                 {selectedClass && (
                   <div className="px-6 py-2 border-t bg-muted/20 flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
                     <Button variant="outline" size="sm" className="shrink-0 rounded-full text-xs hover:bg-primary/10" onClick={() => handleSendMessage("Hãy phân tích xem lớp này đang hay nộp bài sai ở đâu nhất?")}><FileWarning className="h-3 w-3 mr-1.5 text-orange-500" /> Bắt mạch lỗi sai</Button>
-                    <Button variant="outline" size="sm" className="shrink-0 rounded-full text-xs hover:bg-primary/10" onClick={() => handleSendMessage("Tìm cho tôi những sinh viên nộp bài sai quá nhiều hoặc có nguy cơ bỏ cuộc.")}><AlertTriangle className="h-3 w-3 mr-1.5 text-red-500" /> Tìm SV cá biệt</Button>
+                    
+                    {/* 🌟 ĐÃ THAY THẾ NÚT "TÌM SV CÁ BIỆT" BẰNG NÚT RADAR CẢNH BÁO */}
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      className="shrink-0 rounded-full text-xs shadow-md shadow-red-500/20" 
+                      onClick={handleRadarScan}
+                    >
+                      <Radar className="h-3 w-3 mr-1.5 animate-pulse" /> 
+                      Quét Radar Cảnh Báo
+                    </Button>
+
                     <Button variant="outline" size="sm" className="shrink-0 rounded-full text-xs hover:bg-primary/10" onClick={() => handleSendMessage("Hãy tự động tạo 1 bài tập lập trình cơ bản để vá lỗi cho lớp này.")}><Sparkles className="h-3 w-3 mr-1.5 text-purple-500" /> Giao bài vá lỗi</Button>
                   </div>
                 )}

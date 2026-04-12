@@ -126,7 +126,7 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // 2. HÀM NỘP BÀI VÀ CHẤM ĐIỂM (CÓ LƯU VÀO DATABASE + SM-2)
+        // 2. HÀM NỘP BÀI VÀ CHẤM ĐIỂM (CÓ LƯU VÀO DATABASE + TRACKING AI)
         // ==========================================
         [HttpPost("submit")]
         [Authorize] 
@@ -151,7 +151,7 @@ namespace backend.Controllers
 
             if (testCases == null) return BadRequest(new { message = "Lỗi khi đọc Test Cases." });
 
-            // 💡 CHẠY TEST CASE SONG SONG
+            // 💡 CHẠY TEST CASE SONG SONG ĐỂ TỐI ƯU HIỆU SUẤT
             var tasks = testCases.Select(async (tc, index) =>
             {
                 var execResult = await RunCodeInDockerAsync(request.Language, request.Code, tc.Input);
@@ -169,7 +169,7 @@ namespace backend.Controllers
                     Input = tc.Input,
                     ExpectedOutput = tc.ExpectedOutput,
                     ActualOutput = execResult.IsError ? execResult.Error : execResult.Output.Trim(),
-                    ExecutionTime = execResult.ExecutionTime // 🌟 THÊM MỚI: Lấy thời gian chạy
+                    ExecutionTime = execResult.ExecutionTime 
                 };
             });
 
@@ -180,12 +180,21 @@ namespace backend.Controllers
             int passedCount = results.Count(r => r.Passed);
             string finalStatus = allPassed ? "Accepted" : "Wrong Answer";
             
-            // LƯU KẾT QUẢ VÀO SQL SERVER
+            // 💡 GIẢI THÍCH TẠI SAO: Trong các kỳ thi OLP/ICPC, độ phức tạp thuật toán (Big-O) 
+            // được đo lường dựa trên Test Case chạy lâu nhất. Chúng ta dùng `.Max()` để lấy đỉnh thời gian này.
+            long maxExecutionTimeMs = (long)(results.Max(r => r.ExecutionTime) * 1000);
+
+            // 💡 GIẢI THÍCH TẠI SAO: Docker hiện tại chưa cung cấp API C# native gọn nhẹ để lấy mức tiêu thụ RAM.
+            // Để có dữ liệu mồi cho Kỹ năng 4 (Soi Big-O), ta tạm giả lập baseline mức RAM theo đặc thù ngôn ngữ.
+            // Java tốn RAM cho JVM, C++ tối ưu nhất.
+            long estimatedMemoryKb = request.Language == "java" ? 45000 : (request.Language == "python" ? 15000 : 5000);
+
             if (!string.IsNullOrEmpty(request.UserEmail))
             {
                 var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.UserEmail);
                 if (user != null)
                 {
+                    // LƯU KẾT QUẢ VÀO BẢNG SUBMISSIONS
                     var submission = new Submission
                     {
                         UserEmail = request.UserEmail,
@@ -195,13 +204,57 @@ namespace backend.Controllers
                         Status = finalStatus,
                         PassedTests = passedCount,
                         TotalTests = testCases.Count,
+                        
+                        // 🌟 DỮ LIỆU ĐỂ ĐÁNH THỨC KỸ NĂNG 4: SOI CHUẨN BIG-O
+                        ExecutionTime = maxExecutionTimeMs, 
+                        MemoryUsage = estimatedMemoryKb,    
+                        
                         SubmittedAt = DateTime.UtcNow
                     };
 
                     _context.Submissions.Add(submission);
 
                     // ========================================================
-                    // 🌟 THÊM MỚI: THUẬT TOÁN CHỐNG QUÊN (SPACED REPETITION SM-2)
+                    // 🌟 DỮ LIỆU ĐỂ ĐÁNH THỨC KỸ NĂNG 3: RADAR CẢNH BÁO
+                    // ========================================================
+                    // 💡 GIẢI THÍCH TẠI SAO: Kiểm tra sinh viên đã từng làm bài này chưa.
+                    var activity = await _context.StudentActivities
+                        .FirstOrDefaultAsync(a => a.UserEmail == request.UserEmail && a.ExerciseId == request.ExerciseId);
+
+                    if (activity == null)
+                    {
+                        // 💡 GIẢI THÍCH TẠI SAO: Chưa làm thì tạo hồ sơ theo dõi mới.
+                        // StartTime giúp AI sau này tính được "SV này mất bao nhiêu phút để pass bài này".
+                        activity = new StudentActivity
+                        {
+                            UserEmail = request.UserEmail,
+                            ExerciseId = request.ExerciseId,
+                            StartTime = DateTime.UtcNow,
+                            ConsecutiveErrors = 0,
+                            IsResolved = false
+                        };
+                        _context.StudentActivities.Add(activity);
+                    }
+
+                    // Cập nhật mốc nộp bài mới nhất
+                    activity.LastAttemptTime = DateTime.UtcNow;
+
+                    if (allPassed)
+                    {
+                        // 💡 GIẢI THÍCH TẠI SAO: Bài được Accepted. Sinh viên đã an toàn.
+                        // Đặt cờ IsResolved = true và Reset ConsecutiveErrors để AI gạch tên khỏi danh sách "Nguy hiểm".
+                        activity.IsResolved = true;
+                        activity.ConsecutiveErrors = 0;
+                    }
+                    else
+                    {
+                        // 💡 GIẢI THÍCH TẠI SAO: Sinh viên nộp sai. Tăng bộ đếm.
+                        // Nếu AI quét thấy ConsecutiveErrors chạm mốc > 5, cảnh báo sẽ gửi thẳng tới Giảng viên.
+                        activity.ConsecutiveErrors++;
+                    }
+
+                    // ========================================================
+                    // THUẬT TOÁN CHỐNG QUÊN (SPACED REPETITION SM-2)
                     // ========================================================
                     var srsRecord = await _context.SpacedRepetitions
                         .FirstOrDefaultAsync(s => s.UserId == user.Id && s.ExerciseId == request.ExerciseId);
@@ -222,25 +275,23 @@ namespace backend.Controllers
 
                     if (allPassed)
                     {
-                        // Sinh viên làm ĐÚNG -> Tăng khoảng cách ngày ôn
                         srsRecord.Repetitions++;
                         srsRecord.EaseFactor = Math.Max(1.3, srsRecord.EaseFactor + 0.1); 
                         
-                        if (srsRecord.Repetitions == 1) srsRecord.Interval = 1; // Nhắc lại sau 1 ngày
-                        else if (srsRecord.Repetitions == 2) srsRecord.Interval = 3; // Lần 2 nhắc sau 3 ngày
-                        else srsRecord.Interval = (int)Math.Round(srsRecord.Interval * srsRecord.EaseFactor); // Cấp số nhân
+                        if (srsRecord.Repetitions == 1) srsRecord.Interval = 1; 
+                        else if (srsRecord.Repetitions == 2) srsRecord.Interval = 3; 
+                        else srsRecord.Interval = (int)Math.Round(srsRecord.Interval * srsRecord.EaseFactor); 
                     }
                     else
                     {
-                        // Sinh viên làm SAI -> Bắt ôn ngay ngày mai
                         srsRecord.Repetitions = 0;
                         srsRecord.Interval = 1;    
                         srsRecord.EaseFactor = Math.Max(1.3, srsRecord.EaseFactor - 0.2); 
                     }
 
                     srsRecord.NextReviewDate = DateTime.UtcNow.AddDays(srsRecord.Interval);
-                    // ========================================================
-
+                    
+                    // Lưu mọi thay đổi xuống DB cùng một lúc
                     await _context.SaveChangesAsync();
                 }
             }
@@ -309,7 +360,9 @@ namespace backend.Controllers
                 _ => ""
             };
 
-            var sw = Stopwatch.StartNew(); // 🌟 Bắt đầu bấm giờ
+            // 💡 GIẢI THÍCH TẠI SAO: Stopwatch của C# có độ chính xác rất cao, phù hợp để tính
+            // ExecutionTime bằng giây/mili-giây thay vì dùng DateTime.
+            var sw = Stopwatch.StartNew(); 
             try
             {
                 var processStartInfo = new ProcessStartInfo
@@ -331,7 +384,7 @@ namespace backend.Controllers
                     return ("", "Time Limit Exceeded", true, 15.0);
                 }
 
-                sw.Stop(); // 🌟 Dừng bấm giờ
+                sw.Stop(); 
                 string output = await process.StandardOutput.ReadToEndAsync();
                 string error = await process.StandardError.ReadToEndAsync();
 
@@ -374,6 +427,8 @@ namespace backend.Controllers
         public string Input { get; set; } = string.Empty;
         public string ExpectedOutput { get; set; } = string.Empty;
         public string ActualOutput { get; set; } = string.Empty;
-        public double ExecutionTime { get; set; } // 🌟 LƯU THỜI GIAN
+        
+        // 🌟 LƯU THỜI GIAN THỰC THI CHO TỪNG TEST CASE
+        public double ExecutionTime { get; set; } 
     }
 }

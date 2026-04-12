@@ -1,6 +1,10 @@
-import { Terminal as TerminalIcon, ListChecks, BrainCircuit, Code, Loader2, CheckCircle2, XCircle, Flag } from "lucide-react";
+import { Terminal as TerminalIcon, ListChecks, BrainCircuit, Code, Loader2, CheckCircle2, XCircle, Flag, Sparkles } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useState } from "react";
+import { toast } from "@/hooks/use-toast";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 interface TestCaseResult {
   id: number;
@@ -31,6 +35,10 @@ interface RightPanelProps {
   defaultAiFeedback: string;
   MarkdownComponents: any;
   handleReportAI: (originalAIResponse: string) => void;
+  exerciseId: number; 
+  userEmail: string;
+  // 🌟 ĐÃ THÊM TOKEN VÀO ĐÂY ĐỂ TRÁNH LỖI 401
+  token: string; 
 }
 
 const RightPanel = ({
@@ -45,8 +53,44 @@ const RightPanel = ({
   isAILoading,
   defaultAiFeedback,
   MarkdownComponents,
-  handleReportAI
+  handleReportAI,
+  exerciseId,
+  userEmail,
+  token // 🌟 NHẬN TOKEN TỪ WORKSPACE
 }: RightPanelProps) => {
+  
+  const [isAnalyzingBigO, setIsAnalyzingBigO] = useState(false);
+  const [bigOReport, setBigOReport] = useState<string | null>(null);
+
+  // 🌟 HÀM GỌI API SOI BIG-O
+  const handleAnalyzeBigO = async () => {
+      setIsAnalyzingBigO(true);
+      setBigOReport(null);
+
+      try {
+          const response = await fetch(`${API_BASE_URL}/api/AIAssistant/analyze-big-o`, {
+              method: "POST",
+              headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}` // 🌟 DÙNG TOKEN ĐƯỢC TRUYỀN VÀO TRỰC TIẾP
+              },
+              body: JSON.stringify({ UserEmail: userEmail, ExerciseId: exerciseId })
+          });
+
+          const data = await response.json();
+          
+          if (data.success) {
+              setBigOReport(data.report);
+          } else {
+              toast({ title: "Lỗi AI Phân tích", description: data.message, variant: "destructive" });
+          }
+      } catch (error) {
+          toast({ title: "Lỗi kết nối", description: "Không thể gọi Giám khảo AI lúc này.", variant: "destructive" });
+      } finally {
+          setIsAnalyzingBigO(false);
+      }
+  };
+
   return (
     <div className="w-[30%] min-w-[300px] border-l border-editor-line flex flex-col">
       <div className="flex border-b border-editor-line">
@@ -115,6 +159,32 @@ const RightPanel = ({
                        <h3 className="font-bold">{submitResult.status === 'Accepted' ? 'Thành công!' : 'Sai kết quả'}</h3>
                        <p className="text-sm opacity-90 mt-1">Vượt qua: {submitResult.passedTests}/{submitResult.totalTests} Tests</p>
                    </div>
+
+                   {/* 🌟 GIAO DIỆN NÚT SOI BIG-O (CHỈ HIỆN KHI ĐÃ ACCEPTED) */}
+                   {submitResult.status === 'Accepted' && (
+                       <div className="mt-4 p-3 rounded-lg border border-purple-500/30 bg-purple-500/5">
+                           <p className="text-xs text-editor-foreground/80 mb-2 font-medium">Bạn có muốn xem thuật toán của mình đã tối ưu nhất chưa?</p>
+                           <button 
+                               onClick={handleAnalyzeBigO}
+                               disabled={isAnalyzingBigO}
+                               className="w-full py-2 px-3 text-sm font-bold rounded-md bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(168,85,247,0.3)]"
+                           >
+                               {isAnalyzingBigO ? <Loader2 className="w-4 h-4 animate-spin"/> : <Sparkles className="w-4 h-4 text-yellow-300 animate-pulse"/>}
+                               {isAnalyzingBigO ? "AI Đang chấm độ phức tạp..." : "AI Soi Chuẩn Big-O"}
+                           </button>
+
+                           {/* HIỂN THỊ KẾT QUẢ NHẬN XÉT CỦA AI */}
+                           {bigOReport && (
+                               <div className="mt-4 pt-3 border-t border-purple-500/20 prose prose-sm prose-invert max-w-none text-[13px] leading-relaxed">
+                                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                                       {bigOReport}
+                                   </ReactMarkdown>
+                               </div>
+                           )}
+                       </div>
+                   )}
+                   {/* ===================================================== */}
+
                    <div className="space-y-2 mt-4">
                        {submitResult.results.map(tc => (
                            <div key={tc.id} className="p-3 bg-editor-line rounded text-sm">
