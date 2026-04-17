@@ -33,7 +33,7 @@ namespace backend.Controllers
         }
 
         // ==========================================
-        // 1. LẤY DANH SÁCH BÀI TẬP (GET) - AI CŨNG XEM ĐƯỢC
+        // 1. LẤY DANH SÁCH BÀI TẬP CHUNG (GET)
         // ==========================================
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Exercise>>> GetExercises()
@@ -42,7 +42,12 @@ namespace backend.Controllers
             {
                 return NotFound("Không tìm thấy bảng Exercises trong CSDL.");
             }
-            return await _context.Exercises.OrderByDescending(e => e.Id).ToListAsync();
+            
+            // 🚀 SỬA ĐỔI: Chỉ lấy các bài tập KHÔNG thuộc về bất kỳ lớp học nào (Bài tập chung)
+            return await _context.Exercises
+                .Where(e => e.ClassId == null)
+                .OrderByDescending(e => e.Id)
+                .ToListAsync();
         }
 
         [HttpGet("{id}")]
@@ -58,7 +63,12 @@ namespace backend.Controllers
         public async Task<ActionResult<Exercise>> GetFirstExercise()
         {
             if (_context.Exercises == null) return NotFound(new { message = "Chưa có kết nối Database" });
-            var exercise = await _context.Exercises.FirstOrDefaultAsync();
+            
+            // 🚀 SỬA ĐỔI: Đảm bảo bài đầu tiên load lên Workspace cũng phải là bài tập chung
+            var exercise = await _context.Exercises
+                .Where(e => e.ClassId == null)
+                .FirstOrDefaultAsync();
+                
             if (exercise == null) return NotFound(new { message = "Không có bài tập nào trong DB" });
             return Ok(exercise);
         }

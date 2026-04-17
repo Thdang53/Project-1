@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge"; 
 import { 
   Code2, Play, Upload, BrainCircuit, 
-  Loader2, Heart
+  Loader2, Heart, Flag
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import { useAuth } from "../hooks/useAuth";
@@ -13,9 +13,20 @@ import { toast } from "@/hooks/use-toast";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"; 
 
-// 💡 IMPORT CÁC COMPONENT ĐÃ TÁCH
+// IMPORT CÁC COMPONENT ĐÃ TÁCH
 import LeftPanel from "@/components/workspace/LeftPanel";
 import RightPanel from "@/components/workspace/RightPanel";
+
+// IMPORT SHADCN UI CHO POPUP
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Exercise {
   id: number;
@@ -52,9 +63,6 @@ const defaultTemplates: Record<string, string> = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-// =================================================================
-// 💡 CẤU HÌNH VẼ MARKDOWN & TÔ MÀU CODE
-// =================================================================
 const MarkdownComponents = {
   code({ node, inline, className, children, ...props }: any) {
     const match = /language-(\w+)/.exec(className || "");
@@ -95,7 +103,6 @@ const Workspace = () => {
   const location = useLocation();
   const exerciseId = searchParams.get("id") || location.pathname.split('/').pop();
   
-  // 🌟 BIẾN ĐỂ BẮT SÓNG LỆNH ÔN TẬP TỪ DASHBOARD
   const reviewId = searchParams.get("reviewId");
   const mode = searchParams.get("mode");
 
@@ -113,9 +120,7 @@ const Workspace = () => {
   
   const [activeTab, setActiveTab] = useState<"output" | "grading" | "ai">("output");
   const [showChat, setShowChat] = useState(true);
-  
   const [isChatExpanded, setIsChatExpanded] = useState(false);
-  
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
@@ -144,6 +149,11 @@ const Workspace = () => {
   const { user, token } = useAuth();
   const userEmail = user?.email || "";
 
+  // --- 🌟 STATE CHO POPUP BÁO CÁO GOM CHUNG ---
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportMessage, setReportMessage] = useState("");
+  const [reportedAIResponse, setReportedAIResponse] = useState("");
+
   useEffect(() => {
     if (cooldown > 0) {
       const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
@@ -158,24 +168,19 @@ const Workspace = () => {
     }
   }, [code, exerciseId, reviewId]);
 
-  // =================================================================
-  // 🌟 LOGIC: NẾU ĐÂY LÀ CHẾ ĐỘ ÔN TẬP, TỰ ĐỘNG GỌI AI VIẾT LẠI ĐỀ
-  // =================================================================
   useEffect(() => {
     if (mode === "adaptive-review" && reviewId) {
       setIsLoading(true);
       const fetchSpacedRepetitionExercise = async () => {
         try {
-          // 1. Lấy thông tin bài tập cũ
           const originalRes = await fetch(`${API_BASE_URL}/api/Exercises/${reviewId}`);
           const originalEx = await originalRes.json();
           
-          // 2. Chọc API nhờ AI viết lại đề
           const response = await fetch(`${API_BASE_URL}/api/AIAssistant/generate-exercise`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
             body: JSON.stringify({
-              Language: "Python", // Sẽ update sau
+              Language: "Python",
               Topic: `Ôn tập lại bài toán: ${originalEx.title}. Yêu cầu: Hãy giữ nguyên thuật toán cốt lõi và các test cases, nhưng viết lại một cốt truyện hoàn toàn mới lạ.`,
               Difficulty: originalEx.difficulty,
               StudentEmail: userEmail 
@@ -184,7 +189,6 @@ const Workspace = () => {
 
           const data = await response.json();
           if (data.success) {
-            // Ép hệ thống coi đây là bài tập AI Generate để xài chung hàm chấm
             setIsAIGenerated(true);
             setExercise({
               id: originalEx.id, 
@@ -192,7 +196,7 @@ const Workspace = () => {
               title: `[ÔN TẬP] ${data.data.Title}`,
               description: data.data.Description,
               difficulty: originalEx.difficulty,
-              testCases: originalEx.testCases, // BẮT BUỘC DÙNG LẠI TEST CASE CŨ ĐỂ CHẤM
+              testCases: originalEx.testCases, 
               starterCode: data.data.StarterCode || originalEx.starterCode
             });
             
@@ -203,7 +207,6 @@ const Workspace = () => {
         } catch (error) {
           console.error("Lỗi AI làm mới đề bài:", error);
           toast({ title: "Lỗi", description: "Không thể gọi AI làm mới đề bài. Đang hiện bài cũ.", variant: "destructive" });
-          // Nếu AI tèo, rớt về bài cũ
           fetch(`${API_BASE_URL}/api/Exercises/${reviewId}`)
             .then(res => res.json())
             .then(data => setExercise(data));
@@ -216,7 +219,6 @@ const Workspace = () => {
       return; 
     }
 
-    // Logic cũ nếu là bài AI thường hoặc bài hệ thống
     if (isAIGenerated && aiExerciseData) {
       const exTitle = aiExerciseData.title || aiExerciseData.Title || "Bài tập AI";
       const exDesc = aiExerciseData.description || aiExerciseData.Description || "Không có mô tả";
@@ -293,7 +295,6 @@ const Workspace = () => {
     setActiveTab("grading");
     setSubmitResult(null);
 
-    // Xử lý nộp bài cho Bài AI tạo / Bài Ôn Tập (Cùng xài chung logic này vì TestCases dạng JSON)
     if (isAIGenerated) {
       try {
         const testCases = typeof exercise.testCases === 'string' ? JSON.parse(exercise.testCases || "[]") : exercise.testCases;
@@ -332,7 +333,6 @@ const Workspace = () => {
           results: results
         });
 
-        // 🌟 Nếu nộp thành công, gọi ngầm API báo cho backend tính SM-2
         if (finalStatus === "Accepted" && mode === "adaptive-review" && reviewId) {
            fetch(`${API_BASE_URL}/api/CodeExecution/submit`, {
               method: "POST",
@@ -349,7 +349,6 @@ const Workspace = () => {
       return;
     }
 
-    // Xử lý nộp bài cho bài hệ thống bình thường
     try {
       const response = await fetch(`${API_BASE_URL}/api/CodeExecution/submit`, {
         method: "POST",
@@ -398,7 +397,7 @@ const Workspace = () => {
           language: language,
           errorOutput: output.includes("LỖI") ? output : "", 
           userQuestion: "",
-          exerciseId: exercise?.id || 0, // Bổ sung ExerciseId để tìm bí kíp
+          exerciseId: exercise?.id || 0, 
           exerciseTitle: exercise?.title || "",
           exerciseDescription: exercise?.description || ""
         }),
@@ -474,7 +473,7 @@ const Workspace = () => {
           language: language,
           errorOutput: output.includes("LỖI") ? output : "",
           userQuestion: userMsg,
-          exerciseId: exercise?.id || 0, // Bổ sung ExerciseId để tìm bí kíp
+          exerciseId: exercise?.id || 0,
           exerciseTitle: exercise?.title || "",
           exerciseDescription: exercise?.description || "",
           chatHistory: currentHistory
@@ -516,14 +515,26 @@ const Workspace = () => {
     }
   };
 
-  const handleReportAI = async (originalAIResponse: string) => {
+  // ====================================================================
+  // 🚀 HÀM NÀY MỞ POPUP (THAY THẾ HOÀN TOÀN CHO WINDOW.PROMPT)
+  // ====================================================================
+  const handleReportAI = (originalAIResponse: string) => {
     if (!user?.email) {
       toast({ title: "Lỗi", description: "Bạn cần đăng nhập để báo cáo.", variant: "destructive" });
       return;
     }
+    // Gắn dữ liệu và mở Popup
+    setReportedAIResponse(originalAIResponse);
+    setReportMessage("");
+    setIsReportDialogOpen(true);
+  };
 
-    const studentIssue = window.prompt("AI đang giải thích khó hiểu ở chỗ nào vậy bạn? Hãy mô tả ngắn gọn nhé:");
-    if (!studentIssue || studentIssue.trim() === "") return;
+  // 🚀 HÀM NÀY GỌI API KHI NGƯỜI DÙNG BẤM "GỬI" TRONG POPUP
+  const submitReport = async () => {
+    if (!reportMessage.trim()) {
+      toast({ title: "Lỗi", description: "Vui lòng nhập nội dung cần hỗ trợ!", variant: "destructive" });
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/AIAssistant/report-flag`, {
@@ -531,15 +542,16 @@ const Workspace = () => {
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
           exerciseId: exercise?.id || 1, 
-          studentEmail: user.email,
-          studentIssue: studentIssue,
-          originalAIResponse: originalAIResponse,
+          studentEmail: user?.email,
+          studentIssue: reportMessage,
+          originalAIResponse: reportedAIResponse,
           studentCode: code
         })
       });
       const data = await res.json();
       if (data.success) {
         toast({ title: "Đã gửi báo cáo!", description: data.message });
+        setIsReportDialogOpen(false); // Tắt popup
       } else {
         toast({ title: "Lỗi", description: data.message, variant: "destructive" });
       }
@@ -603,7 +615,6 @@ const Workspace = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          
           {isAIGenerated && userEmail && (
             <Button 
               onClick={handleSaveExercise} 
@@ -652,7 +663,7 @@ const Workspace = () => {
       {/* Main workspace */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* SỬ DỤNG LEFT PANEL ĐÃ TÁCH Ở ĐÂY */}
+        {/* LEFT PANEL */}
         <LeftPanel 
           isChatExpanded={isChatExpanded}
           setIsChatExpanded={setIsChatExpanded}
@@ -667,7 +678,7 @@ const Workspace = () => {
           setChatInput={setChatInput}
           cooldown={cooldown}
           handleSendMessage={handleSendMessage}
-          handleReportAI={handleReportAI}
+          handleReportAI={handleReportAI} // Truyền cái hàm mở Popup xuống đây
         />
 
         {/* Center: Code Editor */}
@@ -691,7 +702,7 @@ const Workspace = () => {
           />
         </div>
 
-        {/* 🌟 ĐÃ FIX LỖI TYPESCRIPT CHO EXERCISE ID Ở ĐÂY */}
+        {/* RIGHT PANEL */}
         <RightPanel 
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -704,12 +715,53 @@ const Workspace = () => {
           isAILoading={isAILoading}
           defaultAiFeedback={defaultAiFeedback}
           MarkdownComponents={MarkdownComponents}
-          handleReportAI={handleReportAI}
-          exerciseId={Number(exerciseId) || 0} // Ép sang số hoặc lấy 0 làm fallback an toàn
+          handleReportAI={handleReportAI} // Cũng truyền hàm mở Popup sang đây
+          exerciseId={Number(exerciseId) || 0}
           userEmail={userEmail}   
           token={token}
         />
       </div>
+
+      {/* COMPONENT POPUP GIAO DIỆN SHADCN UI GOM CHUNG CHO TOÀN BỘ WORKSPACE */}
+      <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] border-editor-line bg-[#1E1E1E] text-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-400">
+              <Flag className="w-5 h-5" /> 
+              Gửi yêu cầu hỗ trợ
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Hãy mô tả chi tiết vấn đề bạn đang gặp phải để giảng viên có thể giúp bạn nhanh nhất.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <Textarea 
+              placeholder="Ví dụ: Code của em chạy báo lỗi đỏ ở dòng 15 mà em không hiểu tại sao..." 
+              value={reportMessage}
+              onChange={(e) => setReportMessage(e.target.value)}
+              className="min-h-[150px] resize-none bg-[#2D2D2D] border-[#3D3D3D] text-white focus-visible:ring-orange-400/50"
+            />
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsReportDialogOpen(false)} 
+              className="border-[#3D3D3D] text-gray-300 hover:bg-[#3D3D3D] hover:text-white"
+            >
+              Hủy
+            </Button>
+            <Button 
+              onClick={submitReport} 
+              className="bg-orange-500 text-white hover:bg-orange-600"
+            >
+              Gửi yêu cầu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 };

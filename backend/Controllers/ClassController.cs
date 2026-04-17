@@ -4,6 +4,10 @@ using Microsoft.AspNetCore.Authorization;
 using backend.Data;
 using backend.Models;
 using System.Security.Claims;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace backend.Controllers
 {
@@ -141,7 +145,7 @@ namespace backend.Controllers
                     .ThenInclude(c => c.Lecturer)
                     .OrderByDescending(cs => cs.JoinedAt)
                     .Select(cs => new {
-                        Id = cs.ClassId, // 🌟 ĐÃ FIX: Đổi tên thành Id để React .map() nhận được key và link đúng vào bài
+                        Id = cs.ClassId,
                         ClassName = cs.Class!.ClassName,
                         LecturerName = cs.Class.Lecturer!.FullName,
                         cs.JoinedAt
@@ -150,19 +154,29 @@ namespace backend.Controllers
                 return Ok(new { success = true, data = studentClasses });
             }
         }
+
         // ==========================================
         // 4. LẤY CHI TIẾT LỚP & DANH SÁCH BÀI TẬP
         // ==========================================
         [HttpGet("{id}")]
         public async Task<IActionResult> GetClassDetail(int id)
         {
+            var currentUser = await GetCurrentUserAsync(); // Lấy user hiện tại
+
             var classInfo = await _context.Classes.Include(c => c.Lecturer).FirstOrDefaultAsync(c => c.Id == id);
             if (classInfo == null) return NotFound(new { success = false, message = "Không tìm thấy lớp học." });
 
             var exercises = await _context.Exercises
                 .Where(e => e.ClassId == id)
                 .OrderByDescending(e => e.Id)
-                .Select(e => new { e.Id, e.Title, e.Difficulty, e.Description })
+                .Select(e => new { 
+                    e.Id, 
+                    e.Title, 
+                    e.Difficulty, 
+                    e.Description,
+                    // 🌟 FIX LỖI Ở ĐÂY: Sử dụng UserEmail thay vì UserId để so khớp với bảng Submission
+                    IsCompleted = currentUser != null && _context.Submissions.Any(s => s.ExerciseId == e.Id && s.UserEmail == currentUser.Email && s.Status == "Accepted")
+                })
                 .ToListAsync();
 
             return Ok(new { 

@@ -34,10 +34,10 @@ interface RightPanelProps {
   isAILoading: boolean;
   defaultAiFeedback: string;
   MarkdownComponents: any;
+  // 🚀 CẬP NHẬT INTERFACE: Chỉ cần nhận 1 tham số là Nội dung AI gốc
   handleReportAI: (originalAIResponse: string) => void;
   exerciseId: number; 
   userEmail: string;
-  // 🌟 ĐÃ THÊM TOKEN VÀO ĐÂY ĐỂ TRÁNH LỖI 401
   token: string; 
 }
 
@@ -56,13 +56,12 @@ const RightPanel = ({
   handleReportAI,
   exerciseId,
   userEmail,
-  token // 🌟 NHẬN TOKEN TỪ WORKSPACE
+  token 
 }: RightPanelProps) => {
   
   const [isAnalyzingBigO, setIsAnalyzingBigO] = useState(false);
   const [bigOReport, setBigOReport] = useState<string | null>(null);
 
-  // 🌟 HÀM GỌI API SOI BIG-O
   const handleAnalyzeBigO = async () => {
       setIsAnalyzingBigO(true);
       setBigOReport(null);
@@ -72,7 +71,7 @@ const RightPanel = ({
               method: "POST",
               headers: {
                   "Content-Type": "application/json",
-                  "Authorization": `Bearer ${token}` // 🌟 DÙNG TOKEN ĐƯỢC TRUYỀN VÀO TRỰC TIẾP
+                  "Authorization": `Bearer ${token}` 
               },
               body: JSON.stringify({ UserEmail: userEmail, ExerciseId: exerciseId })
           });
@@ -92,7 +91,7 @@ const RightPanel = ({
   };
 
   return (
-    <div className="w-[30%] min-w-[300px] border-l border-editor-line flex flex-col">
+    <div className="w-[30%] min-w-[300px] border-l border-editor-line flex flex-col relative">
       <div className="flex border-b border-editor-line">
         <button
           onClick={() => setActiveTab("output")}
@@ -147,7 +146,7 @@ const RightPanel = ({
              {isSubmitting && (
                 <div className="flex flex-col items-center mt-10 space-y-3">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    <span className="text-sm">Đang chạy Test Case...</span>
+                    <span className="text-sm text-editor-foreground/80">Đang chạy Test Case...</span>
                 </div>
              )}
              {submitResult && submitResult.message && (
@@ -160,7 +159,6 @@ const RightPanel = ({
                        <p className="text-sm opacity-90 mt-1">Vượt qua: {submitResult.passedTests}/{submitResult.totalTests} Tests</p>
                    </div>
 
-                   {/* 🌟 GIAO DIỆN NÚT SOI BIG-O (CHỈ HIỆN KHI ĐÃ ACCEPTED) */}
                    {submitResult.status === 'Accepted' && (
                        <div className="mt-4 p-3 rounded-lg border border-purple-500/30 bg-purple-500/5">
                            <p className="text-xs text-editor-foreground/80 mb-2 font-medium">Bạn có muốn xem thuật toán của mình đã tối ưu nhất chưa?</p>
@@ -173,7 +171,6 @@ const RightPanel = ({
                                {isAnalyzingBigO ? "AI Đang chấm độ phức tạp..." : "AI Soi Chuẩn Big-O"}
                            </button>
 
-                           {/* HIỂN THỊ KẾT QUẢ NHẬN XÉT CỦA AI */}
                            {bigOReport && (
                                <div className="mt-4 pt-3 border-t border-purple-500/20 prose prose-sm prose-invert max-w-none text-[13px] leading-relaxed">
                                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
@@ -183,19 +180,18 @@ const RightPanel = ({
                            )}
                        </div>
                    )}
-                   {/* ===================================================== */}
 
                    <div className="space-y-2 mt-4">
                        {submitResult.results.map(tc => (
                            <div key={tc.id} className="p-3 bg-editor-line rounded text-sm">
-                               <div className="flex items-center gap-2 font-bold">
+                               <div className="flex items-center gap-2 font-bold text-editor-foreground">
                                    {tc.passed ? <CheckCircle2 className="h-4 w-4 text-success"/> : <XCircle className="h-4 w-4 text-destructive"/>}
                                    Test Case {tc.id}
                                </div>
                                {!tc.passed && (
                                    <div className="mt-2 text-xs font-mono bg-editor p-2 rounded">
-                                       <p className="opacity-50">Input:</p>
-                                       <p className="mb-2">{tc.input}</p>
+                                       <p className="opacity-50 text-editor-foreground">Input:</p>
+                                       <p className="mb-2 text-editor-foreground">{tc.input}</p>
                                        <p className="text-success opacity-80">Expected:</p>
                                        <p className="mb-2 text-success">{tc.expectedOutput}</p>
                                        <p className="text-destructive opacity-80">Your Output:</p>
@@ -218,12 +214,13 @@ const RightPanel = ({
               </ReactMarkdown>
             </div>
             
+            {/* 🚀 ĐƠN GIẢN HÓA: Chỉ gọi thẳng hàm handleReportAI mà file cha truyền xuống */}
             {!isAILoading && aiFeedback !== defaultAiFeedback && (
               <div className="mt-4 pt-4 border-t border-editor-line/50 opacity-80 hover:opacity-100 transition-opacity flex justify-start">
                 <button
                   onClick={() => handleReportAI(aiFeedback)}
                   className="text-[12px] flex items-center gap-1.5 text-orange-400 bg-orange-400/10 hover:bg-orange-400/20 px-3 py-1.5 rounded-md font-medium transition-colors"
-                  title="Báo cáo AI phân tích chưa chính xác"
+                  title="Gửi yêu cầu hỗ trợ đến giảng viên"
                 >
                   <Flag className="w-3.5 h-3.5" /> Cần giảng viên hỗ trợ
                 </button>
