@@ -11,6 +11,14 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    // 🌟 THÊM ĐOẠN PROXY NÀY VÀO ĐỂ VITE BIẾT ĐƯỜNG TRUYỀN DỮ LIỆU XUỐNG BACKEND
+    proxy: {
+      "/api": {
+        target: "http://localhost:5043", // ĐỔI SỐ NÀY THÀNH PORT BACKEND C# CỦA BẠN (ví dụ: 5114, 5253...)
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
