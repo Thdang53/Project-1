@@ -115,8 +115,10 @@ const Workspace = () => {
   const draftKey = `draft_code_exercise_${exerciseId || reviewId}`;
   const savedDraft = (exerciseId || reviewId) ? localStorage.getItem(draftKey) : null;
 
-  const [language, setLanguage] = useState(pastLanguage || "python");
-  const [code, setCode] = useState(pastCode || savedDraft || defaultTemplates[pastLanguage || "python"]);
+  // 💡 ĐÃ FIX: Ưu tiên lấy ngôn ngữ từ AI truyền sang, nếu không có mới dùng pastLanguage hoặc mặc định là python
+  const initialLang = aiExerciseData?.language?.toLowerCase() || pastLanguage || "python";
+  const [language, setLanguage] = useState(initialLang);
+  const [code, setCode] = useState(pastCode || savedDraft || defaultTemplates[initialLang]);
   
   const [activeTab, setActiveTab] = useState<"output" | "grading" | "ai">("output");
   const [showChat, setShowChat] = useState(true);
@@ -168,95 +170,107 @@ const Workspace = () => {
     }
   }, [code, exerciseId, reviewId]);
 
+  // 💡 ĐÃ FIX: ƯU TIÊN SỬ DỤNG DỮ LIỆU TỪ POPUP NẾU CÓ, NẾU KHÔNG MỚI GỌI API
   useEffect(() => {
-    if (mode === "adaptive-review" && reviewId) {
+    let isMounted = true;
+
+    const loadExercise = async () => {
       setIsLoading(true);
-      const fetchSpacedRepetitionExercise = async () => {
-        try {
-          const originalRes = await fetch(`${API_BASE_URL}/api/Exercises/${reviewId}`);
+
+      // --- TRƯỜNG HỢP 1: BÀI TẬP DO AI TẠO (TRUYỀN TỪ DASHBOARD/POPUP SANG) ---
+      if (isAIGenerated && aiExerciseData) {
+        
+        // 💡 ĐÃ FIX: Đồng bộ lại State Language một lần nữa cho chắc chắn
+        const targetLang = aiExerciseData.language?.toLowerCase() || pastLanguage || "python";
+        setLanguage(targetLang);
+
+        setExercise({
+          id: Number(exerciseId) || aiExerciseData.id || Number(reviewId) || 0,
+          lessonId: aiExerciseData.lessonId || 0,
+          title: aiExerciseData.title || aiExerciseData.Title || "Bài tập AI",
+          description: aiExerciseData.description || aiExerciseData.Description,
+          difficulty: aiExerciseData.difficulty || "Cơ bản",
+          testCases: typeof aiExerciseData.testCases === 'string' ? aiExerciseData.testCases : JSON.stringify(aiExerciseData.testCases),
+          starterCode: aiExerciseData.starterCode || aiExerciseData.StarterCode || ""
+        });
+        
+        if (!savedDraft && !pastCode) {
+          // 💡 ĐÃ FIX: Nạp đúng template mặc định của ngôn ngữ đó nếu không có code nháp
+          setCode(aiExerciseData.starterCode || aiExerciseData.StarterCode || defaultTemplates[targetLang]);
+        }
+        if (isMounted) setIsLoading(false);
+        return; 
+      }
+
+      try {
+        // --- TRƯỜNG HỢP 2: ÔN TẬP THÍCH ỨNG DỰ PHÒNG (Ví dụ: Bấm F5 hoặc Share Link) ---
+        if (mode === "adaptive-review" && reviewId) {
+          const originalRes = await fetch(`${API_BASE_URL}/api/Exercises/${reviewId}`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
           const originalEx = await originalRes.json();
           
           const response = await fetch(`${API_BASE_URL}/api/AIAssistant/generate-exercise`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            headers: { 
+              "Content-Type": "application/json", 
+              "Authorization": `Bearer ${token}` 
+            },
             body: JSON.stringify({
-              Language: "Python",
-              Topic: `Ôn tập lại bài toán: ${originalEx.title}. Yêu cầu: Hãy giữ nguyên thuật toán cốt lõi và các test cases, nhưng viết lại một cốt truyện hoàn toàn mới lạ.`,
-              Difficulty: originalEx.difficulty,
+              Language: language,
+              Topic: `Ôn tập lại bài toán: ${originalEx.title || "Bài tập cũ"}. Yêu cầu: Hãy giữ nguyên thuật toán cốt lõi và các test cases, nhưng viết lại một cốt truyện hoàn toàn mới lạ.`,
+              Difficulty: originalEx.difficulty || "Trung bình",
               StudentEmail: userEmail 
             })
           });
 
           const data = await response.json();
-          if (data.success) {
+          if (data.success && isMounted) {
             setIsAIGenerated(true);
             setExercise({
-              id: originalEx.id, 
-              lessonId: originalEx.lessonId,
+              id: Number(reviewId), 
+              lessonId: originalEx.lessonId || 0,
               title: `[ÔN TẬP] ${data.data.Title}`,
               description: data.data.Description,
-              difficulty: originalEx.difficulty,
+              difficulty: originalEx.difficulty || "Cơ bản",
               testCases: originalEx.testCases, 
               starterCode: data.data.StarterCode || originalEx.starterCode
             });
             
             if (!savedDraft && !pastCode) {
-              setCode(data.data.StarterCode || originalEx.starterCode || defaultTemplates.python);
+              setCode(data.data.StarterCode || originalEx.starterCode || defaultTemplates[language]);
             }
+          } else if (isMounted) {
+             setExercise(originalEx);
           }
-        } catch (error) {
-          console.error("Lỗi AI làm mới đề bài:", error);
-          toast({ title: "Lỗi", description: "Không thể gọi AI làm mới đề bài. Đang hiện bài cũ.", variant: "destructive" });
-          fetch(`${API_BASE_URL}/api/Exercises/${reviewId}`)
-            .then(res => res.json())
-            .then(data => setExercise(data));
-        } finally {
-          setIsLoading(false);
+          return; 
         }
-      };
-      
-      fetchSpacedRepetitionExercise();
-      return; 
-    }
 
-    if (isAIGenerated && aiExerciseData) {
-      const exTitle = aiExerciseData.title || aiExerciseData.Title || "Bài tập AI";
-      const exDesc = aiExerciseData.description || aiExerciseData.Description || "Không có mô tả";
-      const exDiff = aiExerciseData.difficulty || aiExerciseData.Difficulty || "Cơ bản";
-      const exTests = aiExerciseData.testCases || aiExerciseData.TestCases || [];
-      const exStarterCode = aiExerciseData.starterCode || aiExerciseData.StarterCode || "";
+        // --- TRƯỜNG HỢP 3: LÀM BÀI TẬP THÔNG THƯỜNG ---
+        const isInvalidId = !exerciseId || exerciseId === "workspace";
+        const fetchUrl = isInvalidId 
+          ? `${API_BASE_URL}/api/Exercises/first`
+          : `${API_BASE_URL}/api/Exercises/${exerciseId}`;
 
-      setExercise({
-        id: Number(exerciseId) || 0,
-        lessonId: 0,
-        title: exTitle,
-        description: exDesc,
-        difficulty: exDiff,
-        testCases: typeof exTests === 'string' ? exTests : JSON.stringify(exTests),
-        starterCode: exStarterCode
-      });
-      
-      if (!savedDraft && !pastCode && exStarterCode) {
-        setCode(exStarterCode);
-      }
-      setIsLoading(false);
-    } else {
-      const fetchUrl = exerciseId 
-        ? `${API_BASE_URL}/api/Exercises/${exerciseId}`
-        : `${API_BASE_URL}/api/Exercises/first`;
-
-      fetch(fetchUrl)
-        .then((res) => res.json())
-        .then((data) => {
-          if (!data.message) setExercise(data);
-          setIsLoading(false);
-        })
-        .catch((error) => {
-          console.error("Lỗi:", error);
-          setIsLoading(false);
+        const exRes = await fetch(fetchUrl, {
+          headers: { "Authorization": `Bearer ${token}` }
         });
-    }
-  }, [exerciseId, reviewId, mode, isAIGenerated, aiExerciseData, savedDraft, pastCode, token, userEmail]);
+        const exData = await exRes.json();
+        
+        if (isMounted && !exData.message) {
+          setExercise(exData);
+        }
+      } catch (error) {
+        console.error("Lỗi tải bài tập:", error);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadExercise();
+
+    return () => { isMounted = false; };
+  }, [exerciseId, reviewId, mode, token, isAIGenerated, aiExerciseData, savedDraft, pastCode, userEmail, language, pastLanguage]);
 
   const handleLanguageChange = (newLang: string) => {
     const isDefaultCode = Object.values(defaultTemplates).includes(code);

@@ -21,6 +21,8 @@ namespace backend.Models
         public int Interval { get; set; } = 0; // Số ngày cách quãng
         public DateTime NextReviewDate { get; set; } = DateTime.UtcNow; // Ngày báo thức bắt làm lại
 
+        public string? Language { get; set; } // Ngôn ngữ của bài tập (ví dụ: "cpp" hoặc "python")
+
         [ForeignKey("UserId")]
         public User? User { get; set; }
 

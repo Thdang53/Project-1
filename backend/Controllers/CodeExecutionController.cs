@@ -268,9 +268,14 @@ namespace backend.Controllers
                             Repetitions = 0,
                             EaseFactor = 2.5,
                             Interval = 0,
-                            NextReviewDate = DateTime.UtcNow
+                            NextReviewDate = DateTime.UtcNow,
+                            Language = request.Language // 💡 ĐÃ FIX: Lưu ngôn ngữ ngay lần đầu làm
                         };
                         _context.SpacedRepetitions.Add(srsRecord);
+                    }
+                    else 
+                    {
+                        srsRecord.Language = request.Language; // 💡 ĐÃ FIX: Cập nhật lại ngôn ngữ mới nhất sinh viên dùng
                     }
 
                     if (allPassed)
@@ -289,7 +294,8 @@ namespace backend.Controllers
                         srsRecord.EaseFactor = Math.Max(1.3, srsRecord.EaseFactor - 0.2); 
                     }
 
-                    srsRecord.NextReviewDate = DateTime.UtcNow.AddDays(srsRecord.Interval);
+                    //srsRecord.NextReviewDate = DateTime.UtcNow.AddDays(srsRecord.Interval); // Đặt lịch ôn tập theo ngày dựa trên thuật toán SM-2 gốc
+                    srsRecord.NextReviewDate = DateTime.UtcNow.AddSeconds(10); // Ép hệ thống 10 giây sau là đòi ôn tập
                     
                     // Lưu mọi thay đổi xuống DB cùng một lúc
                     await _context.SaveChangesAsync();

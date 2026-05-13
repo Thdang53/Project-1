@@ -210,6 +210,7 @@ namespace backend.Controllers
                     s.ExerciseId,
                     ExerciseTitle = s.Exercise!.Title,
                     Difficulty = s.Exercise.Difficulty,
+                    s.Language, // 💡 ĐÃ THÊM: Trả về Language đã lưu trong SpacedRepetition
                     s.Repetitions, // Số chuỗi thắng
                     s.NextReviewDate
                 })
