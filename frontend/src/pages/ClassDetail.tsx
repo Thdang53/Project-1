@@ -7,12 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription, SheetClose } from "@/components/ui/sheet";
+import { Badge } from "@/components/ui/badge"; 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   BookOpen, ArrowLeft, Play, Loader2, Sparkles, Trash2, Code2, Plus, 
-  Users, Bot, Activity, Send, Radar, Settings, MoreVertical, FileWarning, CheckCircle2 
-} from "lucide-react"; // 🌟 Đã thêm CheckCircle2
+  Users, Bot, Activity, Send, Radar, Settings, MoreVertical, FileWarning, 
+  CheckCircle2, UserCircle, ChevronRight,
+  Maximize2, Minimize2, MessageSquarePlus, MessageSquare, User, X
+} from "lucide-react"; 
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
@@ -21,6 +24,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 interface TestCase { input: string; expectedOutput: string; }
 interface ChatMessage { role: "user" | "ai"; content: string; }
+interface ChatSession { id: number; title: string; createdAt: string; }
 
 const ClassDetail = () => {
   const { id } = useParams();
@@ -32,22 +36,23 @@ const ClassDetail = () => {
   const [exercises, setExercises] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // States Modal Tạo bài tập
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newEx, setNewEx] = useState({ title: "", description: "", difficulty: "Cơ bản", starterCode: "# Viết code của bạn ở đây...\ndef solve():\n  pass" });
   const [testCases, setTestCases] = useState<TestCase[]>([{ input: "", expectedOutput: "" }]);
 
-  // STATES CHO AI COPILOT
+  // 🌟 STATES CHO AI COPILOT
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatting, setIsChatting] = useState(false);
+  const [isAiExpanded, setIsAiExpanded] = useState(false); 
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { 
     if (token && id) {
       fetchClassDetail(); 
-      if (userRole !== "Student") fetchChatHistory(); 
     }
   }, [token, id, userRole]);
 
@@ -63,28 +68,77 @@ const ClassDetail = () => {
     } catch (e) { toast({ title: "Lỗi tải dữ liệu", variant: "destructive" }); } finally { setIsLoading(false); }
   };
 
-  const fetchChatHistory = async () => {
+  // 🌟 HÀM TẢI DANH SÁCH CUỘC TRÒ CHUYỆN (SESSIONS)
+  const fetchChatSessions = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/Advisor/history/${id}`, { headers: { "Authorization": `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE_URL}/api/Advisor/sessions/${id}`, { headers: { "Authorization": `Bearer ${token}` } });
       const data = await res.json();
-      if (data.success && data.data.length > 0) setChatMessages(data.data);
-      else setChatMessages([{ role: "ai", content: `Chào Thầy/Cô. Em là trợ lý của lớp. Thầy/Cô cần em phân tích gì ạ?` }]);
-    } catch (error) { console.error("Lỗi tải lịch sử chat"); }
+      if (data.success) {
+        setChatSessions(data.data);
+        if (data.data.length > 0 && !currentSessionId) {
+          loadChatHistory(data.data[0].id);
+        } else if (data.data.length === 0) {
+          handleNewChat(); 
+        }
+      }
+    } catch (error) { console.error("Lỗi tải danh sách session"); }
   };
 
+  // 🌟 HÀM TẢI NỘI DUNG CHAT THEO SESSION ID
+  const loadChatHistory = async (sessionId: number) => {
+    if (sessionId === 0) {
+        handleNewChat();
+        return;
+    }
+    setCurrentSessionId(sessionId);
+    setIsChatting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/Advisor/history/${sessionId}`, { headers: { "Authorization": `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.success && data.data.length > 0) setChatMessages(data.data);
+      else handleNewChat();
+    } catch (error) { console.error("Lỗi tải lịch sử chat"); } finally { setIsChatting(false); }
+  };
+
+  // 💡 ĐÃ FIX: HÀM TẠO CUỘC TRÒ CHUYỆN MỚI (CHÈN NGAY 1 PHIÊN ẢO VÀO UI)
+  const handleNewChat = () => {
+    setCurrentSessionId(null);
+    setChatMessages([{ role: "ai", content: `🔄 Đã làm mới đoạn chat. Chào Thầy/Cô, em có thể giúp gì tiếp theo ạ?` }]);
+    
+    // Chèn 1 dòng "phiên ảo" (id 0) vào danh sách để sinh viên nhìn thấy sự thay đổi ngay lập tức
+    if (!chatSessions.find(s => s.id === 0)) {
+        setChatSessions(prev => [{ id: 0, title: "Đoạn chat mới...", createdAt: new Date().toISOString() }, ...prev]);
+    }
+  };
+
+  // 🌟 HÀM NHẮN TIN
   const handleSendMessage = async (customMessage?: string) => {
     const messageToSend = customMessage || chatInput;
     if (!messageToSend.trim() || isChatting) return;
+    
     setChatMessages(prev => [...prev, { role: "user", content: messageToSend }]);
-    setChatInput(""); setIsChatting(true);
+    setChatInput(""); 
+    setIsChatting(true);
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/Advisor/chat`, {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ ClassId: Number(id), Message: messageToSend })
+        body: JSON.stringify({ 
+          ClassId: Number(id), 
+          SessionId: currentSessionId, 
+          Message: messageToSend 
+        })
       });
       const data = await res.json();
-      if (data.success) setChatMessages(prev => [...prev, { role: "ai", content: data.reply }]);
+      if (data.success) {
+        setChatMessages(prev => [...prev, { role: "ai", content: data.reply }]);
+        
+        // 💡 ĐÃ FIX: Nếu chat thành công, gọi lại danh sách từ DB để cập nhật chính thức
+        if (!currentSessionId && data.sessionId) {
+          setCurrentSessionId(data.sessionId);
+          fetchChatSessions(); 
+        }
+      }
       else setChatMessages(prev => [...prev, { role: "ai", content: "❌ Lỗi: " + data.message }]);
     } catch (error) { setChatMessages(prev => [...prev, { role: "ai", content: "❌ Mất kết nối." }]); } finally { setIsChatting(false); }
   };
@@ -96,15 +150,20 @@ const ClassDetail = () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/Advisor/radar-scan`, {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ ClassId: Number(id) })
+        body: JSON.stringify({ ClassId: Number(id), SessionId: currentSessionId })
       });
       const data = await res.json();
-      if (data.success) setChatMessages(prev => [...prev, { role: "ai", content: data.reply }]);
+      if (data.success) {
+        setChatMessages(prev => [...prev, { role: "ai", content: data.reply }]);
+        if (!currentSessionId && data.sessionId) {
+          setCurrentSessionId(data.sessionId);
+          fetchChatSessions();
+        }
+      }
       else setChatMessages(prev => [...prev, { role: "ai", content: "❌ Lỗi quét Radar: " + data.message }]);
     } catch (error) { setChatMessages(prev => [...prev, { role: "ai", content: "❌ Mất kết nối khi quét Radar." }]); } finally { setIsChatting(false); }
   };
 
-  // Logic quản lý Test Case và Tạo Bài Tập
   const handleAddTestCase = () => setTestCases([...testCases, { input: "", expectedOutput: "" }]);
   const handleRemoveTestCase = (index: number) => {
     if (testCases.length === 1) return toast({ title: "Phải có ít nhất 1 Test Case", variant: "destructive" });
@@ -125,6 +184,22 @@ const ClassDetail = () => {
       const data = await res.json();
       if (data.success) { toast({ title: "Đã giao bài tập cho lớp." }); setIsCreateModalOpen(false); fetchClassDetail(); }
     } catch (e) { toast({ title: "Lỗi kết nối", variant: "destructive" }); } finally { setIsCreating(false); }
+  };
+
+  const getDifficultyColor = (diff: string) => {
+    const d = diff?.toLowerCase() || "";
+    if (d === 'easy' || d === 'cơ bản') return 'bg-success/10 text-success border-success/20';
+    if (d === 'medium' || d === 'trung bình') return 'bg-warning/10 text-warning border-warning/20';
+    if (d === 'hard' || d === 'nâng cao') return 'bg-destructive/10 text-destructive border-destructive/20';
+    return 'bg-muted text-muted-foreground border-border';
+  };
+
+  const displayDifficulty = (diff: string) => {
+    const d = diff?.toLowerCase() || "";
+    if (d === 'easy' || d === 'cơ bản') return 'CƠ BẢN';
+    if (d === 'medium' || d === 'trung bình') return 'TRUNG BÌNH';
+    if (d === 'hard' || d === 'nâng cao') return 'NÂNG CAO';
+    return 'CƠ BẢN';
   };
 
   if (isLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
@@ -157,88 +232,184 @@ const ClassDetail = () => {
             
             {userRole !== "Student" && (
               <div className="flex gap-3">
-                
-                {/* AI COPILOT SHEET */}
-                <Sheet>
+                {/* 💡 SỰ KIỆN onOpenChange ĐỂ TẢI DANH SÁCH CHAT MỖI KHI MỞ BẢNG LÊN */}
+                <Sheet onOpenChange={(open) => { if (open) fetchChatSessions(); }}>
                   <SheetTrigger asChild>
-                    <Button className="bg-orange-500 hover:bg-orange-600 text-white h-10 rounded-xl shadow-sm shadow-orange-500/20">
-                      <Bot className="h-4 w-4 mr-2" /> AI Cố vấn
+                    <Button id="ai-advisor-trigger" className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white h-10 rounded-xl shadow-sm">
+                      <Sparkles className="h-4 w-4 mr-2" /> AI Cố vấn
                     </Button>
                   </SheetTrigger>
-                  <SheetContent className="w-[400px] sm:w-[540px] sm:max-w-none flex flex-col p-0 border-l-orange-500/20">
-                    <SheetHeader className="p-5 border-b bg-orange-500/5 text-left shrink-0">
-                      <SheetTitle className="flex items-center gap-2 text-orange-500"><Bot className="h-5 w-5"/> AI Cố vấn Học thuật</SheetTitle>
-                      <SheetDescription>Phân tích dữ liệu nội bộ lớp {classInfo?.className}</SheetDescription>
-                    </SheetHeader>
+                  
+                  <SheetContent className={`p-0 flex transition-all duration-300 ease-in-out border-l-blue-500/20 bg-background ${isAiExpanded ? 'w-screen sm:w-screen sm:max-w-[100vw]' : 'w-[850px] sm:w-[900px] sm:max-w-none'}`}>
                     
-                    {/* KHU VỰC HIỂN THỊ CHAT */}
-                    <div className="flex-1 overflow-y-auto p-5 bg-muted/10 space-y-5" ref={scrollRef}>
-                      {chatMessages.map((msg, idx) => (
-                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === 'user' ? 'bg-orange-500 text-white rounded-tr-sm' : 'bg-card border shadow-sm rounded-tl-sm'}`}>
-                            {msg.role === 'ai' ? (
-                              <div className="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed">
-                                <ReactMarkdown>{msg.content}</ReactMarkdown>
-                              </div>
-                            ) : (
-                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                            )}
+                    <SheetHeader className="sr-only">
+                      <SheetTitle>AI Cố vấn</SheetTitle>
+                      <SheetDescription>Trợ lý ảo phân tích lớp học</SheetDescription>
+                    </SheetHeader>
+
+                    <div className="flex h-full w-full overflow-hidden">
+                      
+                      {/* ======================================================== */}
+                      {/* CỘT TRÁI (SIDEBAR): HIỂN THỊ DANH SÁCH SESSIONS */}
+                      {/* ======================================================== */}
+                      <div className="hidden sm:flex flex-col w-[260px] lg:w-[280px] border-r border-border/50 bg-muted/30 shrink-0">
+                        
+                        <div className="h-14 flex items-center px-5 border-b border-border/50 shrink-0 bg-background/50 backdrop-blur-sm">
+                          <div className="flex items-center gap-2.5 text-blue-600 dark:text-blue-400">
+                             <Bot className="h-5 w-5" />
+                             <span className="font-bold text-[15px] whitespace-nowrap">AI Cố vấn Học tập</span>
                           </div>
                         </div>
-                      ))}
-                      {isChatting && (
-                        <div className="flex justify-start">
-                          <div className="bg-card border shadow-sm rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin text-orange-500" /><span className="text-xs text-muted-foreground">Đang xử lý...</span>
+
+                        <div className="flex-1 overflow-y-auto px-3 py-5 space-y-6 custom-scrollbar">
+                          
+                          {/* Nút Chat Mới */}
+                          <Button onClick={handleNewChat} variant="outline" className="w-full justify-start gap-2 text-blue-600 border-blue-200 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-900 dark:hover:bg-blue-900/30 h-10 rounded-xl transition-all shadow-sm">
+                            <Plus className="h-5 w-5" /> <span className="font-semibold">Đoạn chat mới</span>
+                          </Button>
+                          
+                          {/* Nhóm Công cụ */}
+                          <div>
+                            <div className="text-xs font-bold text-muted-foreground mb-3 px-2 uppercase tracking-wider">Công cụ Cố vấn</div>
+                            <div className="space-y-1">
+                              <Button variant="ghost" onClick={handleRadarScan} disabled={isChatting} className="w-full justify-start font-medium text-sm h-10 rounded-lg hover:bg-muted text-foreground transition-all">
+                                <Radar className="h-4 w-4 mr-3 text-red-500" /> Quét Radar Cảnh Báo
+                              </Button>
+                              <Button variant="ghost" onClick={() => handleSendMessage("Hãy phân tích xem lớp này đang hay nộp bài sai ở đâu nhất?")} disabled={isChatting} className="w-full justify-start font-medium text-sm h-10 rounded-lg hover:bg-muted text-foreground transition-all">
+                                <FileWarning className="h-4 w-4 mr-3 text-orange-500" /> Bắt mạch lỗi sai
+                              </Button>
+                              <Button variant="ghost" onClick={() => handleSendMessage("Hãy tự động tạo 1 bài tập lập trình cơ bản để vá lỗi cho lớp này.")} disabled={isChatting} className="w-full justify-start font-medium text-sm h-10 rounded-lg hover:bg-muted text-foreground transition-all">
+                                <Sparkles className="h-4 w-4 mr-3 text-blue-500" /> Giao bài vá lỗi
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Lịch sử Chats */}
+                          <div>
+                            <div className="text-xs font-bold text-muted-foreground mb-3 px-2 uppercase tracking-wider">Lịch sử trò chuyện</div>
+                            <div className="space-y-1">
+                              {chatSessions.length === 0 ? (
+                                <div className="text-center px-2 py-4 text-xs text-muted-foreground">Chưa có lịch sử</div>
+                              ) : (
+                                chatSessions.map(session => (
+                                  <Button 
+                                    key={session.id} 
+                                    variant="ghost" 
+                                    onClick={() => loadChatHistory(session.id)}
+                                    // Highlight màu xanh nếu đang ở đúng Session đó
+                                    className={`w-full justify-start font-medium text-sm h-10 rounded-lg px-3 transition-all ${
+                                      currentSessionId === session.id 
+                                        ? 'bg-blue-600/10 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 font-semibold' 
+                                        : 'hover:bg-muted text-foreground'
+                                    }`}
+                                  >
+                                    <MessageSquare className="h-4 w-4 mr-3 shrink-0" /> 
+                                    <span className="truncate text-left w-full block">{session.title}</span>
+                                  </Button>
+                                ))
+                              )}
+                            </div>
                           </div>
                         </div>
-                      )}
-                    </div>
+                      </div>
 
-                    {/* NÚT LỆNH NHANH */}
-                    <div className="px-5 py-3 border-t bg-card flex gap-2 overflow-x-auto scrollbar-hide shrink-0">
-                      <Button variant="outline" size="sm" className="shrink-0 rounded-full text-xs hover:text-orange-500" onClick={handleRadarScan} disabled={isChatting}>
-                        <Radar className="h-3 w-3 mr-1.5 text-red-500" /> Quét Radar Cảnh Báo
-                      </Button>
-                      <Button variant="outline" size="sm" className="shrink-0 rounded-full text-xs hover:text-orange-500" onClick={() => handleSendMessage("Hãy phân tích xem lớp này đang hay nộp bài sai ở đâu nhất?")} disabled={isChatting}>
-                        <FileWarning className="h-3 w-3 mr-1.5" /> Bắt mạch lỗi sai
-                      </Button>
-                      <Button variant="outline" size="sm" className="shrink-0 rounded-full text-xs hover:text-orange-500" onClick={() => handleSendMessage("Hãy tự động tạo 1 bài tập lập trình cơ bản để vá lỗi cho lớp này.")} disabled={isChatting}>
-                        <Sparkles className="h-3 w-3 mr-1.5" /> Giao bài vá lỗi
-                      </Button>
-                    </div>
+                      {/* ======================================================== */}
+                      {/* CỘT PHẢI (MAIN CHAT AREA) */}
+                      {/* ======================================================== */}
+                      <div className="flex-1 flex flex-col h-full relative min-w-0 bg-background">
+                        
+                        <div className="h-14 border-b border-border/50 flex items-center justify-between px-4 bg-background/95 backdrop-blur-md shrink-0 z-10">
+                          <div className="flex sm:hidden items-center gap-2 text-blue-600">
+                             <Bot className="h-5 w-5" />
+                             <span className="font-bold text-[15px]">AI Cố vấn Học tập</span>
+                          </div>
+                          
+                          <div className="hidden sm:flex items-center">
+                            <Badge variant="outline" className="text-muted-foreground font-normal border-border bg-muted/20 px-3 py-1">
+                              Phân tích lớp: <strong className="ml-1 text-foreground">{classInfo?.className}</strong>
+                            </Badge>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 ml-auto mr-8 sm:mr-0">
+                            <Button variant="ghost" size="icon" onClick={() => setIsAiExpanded(!isAiExpanded)} title={isAiExpanded ? "Thu nhỏ" : "Phóng to"} className="h-8 w-8 text-muted-foreground hover:text-foreground hidden sm:flex transition-all">
+                              {isAiExpanded ? <Minimize2 className="h-4.5 w-4.5" /> : <Maximize2 className="h-4.5 w-4.5" />}
+                            </Button>
+                            <SheetClose asChild>
+                               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all">
+                                  <X className="h-4.5 w-4.5" />
+                               </Button>
+                            </SheetClose>
+                          </div>
+                        </div>
 
-                    {/* KHUNG NHẬP CHAT */}
-                    <div className="p-4 bg-card border-t shrink-0">
-                      <div className="relative flex items-end gap-2">
-                        <Textarea 
-                          placeholder="Ra lệnh cho AI..." 
-                          className="min-h-[52px] max-h-[120px] resize-none bg-muted/50 border-muted focus-visible:ring-orange-500/50 rounded-xl"
-                          value={chatInput}
-                          onChange={(e) => setChatInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-                          disabled={isChatting}
-                        />
-                        <Button onClick={() => handleSendMessage()} disabled={!chatInput.trim() || isChatting} size="icon" className="h-[52px] w-[52px] shrink-0 bg-orange-500 hover:bg-orange-600 text-white rounded-xl shadow-sm">
-                          <Send className="h-5 w-5" />
-                        </Button>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar" ref={scrollRef}>
+                           <div className="mx-auto w-full max-w-4xl flex flex-col gap-6 px-4 py-6">
+                              {chatMessages.map((msg, idx) => (
+                                <div key={idx} className={`flex items-start gap-4 w-full ${msg.role === 'user' ? 'flex-row-reverse ml-auto' : ''}`}>
+                                  <div className={`h-8 w-8 shrink-0 mt-1 rounded-full flex items-center justify-center border border-border/50 shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gradient-to-br from-blue-600 to-violet-600 text-white'}`}>
+                                    {msg.role === 'user' ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+                                  </div>
+                                  
+                                  <div className={`px-5 py-3.5 text-[15px] leading-relaxed overflow-hidden prose prose-sm shadow-sm ${msg.role === 'user' ? 'max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tr-sm bg-blue-600 text-white prose-invert' : 'w-full max-w-full rounded-2xl rounded-tl-sm border border-border/60 bg-muted/30 text-foreground dark:prose-invert'}`}>
+                                     {msg.role === 'ai' ? (
+                                       <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                     ) : (
+                                       <p className="whitespace-pre-wrap">{msg.content}</p>
+                                     )}
+                                  </div>
+                                </div>
+                              ))}
+                              
+                              {isChatting && (
+                                <div className="flex items-start gap-4 w-full">
+                                  <div className="h-8 w-8 shrink-0 mt-1 rounded-full flex items-center justify-center border border-border/50 shadow-sm bg-gradient-to-br from-blue-600 to-violet-600 text-white">
+                                    <Sparkles className="h-4 w-4" />
+                                  </div>
+                                  <div className="rounded-2xl rounded-tl-sm border border-border/60 bg-muted/30 px-5 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm text-muted-foreground font-medium">AI đang suy nghĩ</span>
+                                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                           </div>
+                        </div>
+
+                        <div className="p-4 bg-background border-t border-border/50 shrink-0">
+                           <div className="max-w-4xl mx-auto relative flex items-end gap-2 bg-card border shadow-sm rounded-2xl p-2 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+                             <Textarea 
+                                placeholder="Nhập yêu cầu để AI cố vấn phân tích..." 
+                                className="min-h-[44px] max-h-[150px] resize-none border-0 bg-transparent focus-visible:ring-0 px-3 py-3 text-[15px] custom-scrollbar"
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                                disabled={isChatting}
+                             />
+                             <Button onClick={() => handleSendMessage()} disabled={!chatInput.trim() || isChatting} size="icon" className="h-10 w-10 shrink-0 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm mb-1 mr-1 transition-transform active:scale-95">
+                               <Send className="h-4.5 w-4.5" />
+                             </Button>
+                           </div>
+                           <p className="text-center text-[11px] text-muted-foreground mt-3">Hệ thống AI Cố vấn có thể đưa ra kết luận chưa chính xác, hãy luôn kiểm chứng bằng dữ liệu.</p>
+                        </div>
+
                       </div>
                     </div>
                   </SheetContent>
                 </Sheet>
 
-                {/* DIALOG GIAO BÀI TẬP */}
+                {/* MODAL TẠO BÀI TẬP */}
                 <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
                   <DialogTrigger asChild><Button className="bg-primary hover:bg-primary/90 h-10 rounded-xl shadow-sm"><Plus className="h-4 w-4 mr-2" /> Giao bài</Button></DialogTrigger>
-                  <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+                  <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto custom-scrollbar">
                     <DialogHeader><DialogTitle className="flex items-center gap-2 text-xl"><Sparkles className="h-5 w-5 text-warning"/> Soạn Bài tập</DialogTitle></DialogHeader>
                     <div className="space-y-6 pt-4">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2 space-y-2"><label className="text-sm font-semibold">Tên bài tập</label><Input value={newEx.title} onChange={e => setNewEx({...newEx, title: e.target.value})} /></div>
                         <div className="space-y-2"><label className="text-sm font-semibold">Độ khó</label><select value={newEx.difficulty} onChange={e => setNewEx({...newEx, difficulty: e.target.value})} className="h-10 w-full rounded-md border border-input bg-background px-3 outline-none focus:border-primary"><option>Cơ bản</option><option>Trung bình</option><option>Nâng cao</option></select></div>
                       </div>
-                      <div className="space-y-2"><label className="text-sm font-semibold">Mô tả (Markdown)</label><Textarea value={newEx.description} onChange={e => setNewEx({...newEx, description: e.target.value})} className="min-h-[120px]"/></div>
-                      <div className="space-y-2"><label className="text-sm font-semibold">Code Mẫu</label><Textarea value={newEx.starterCode} onChange={e => setNewEx({...newEx, starterCode: e.target.value})} className="min-h-[100px] font-mono text-sm bg-muted/30"/></div>
+                      <div className="space-y-2"><label className="text-sm font-semibold">Mô tả (Markdown)</label><Textarea value={newEx.description} onChange={e => setNewEx({...newEx, description: e.target.value})} className="min-h-[120px] custom-scrollbar"/></div>
+                      <div className="space-y-2"><label className="text-sm font-semibold">Code Mẫu</label><Textarea value={newEx.starterCode} onChange={e => setNewEx({...newEx, starterCode: e.target.value})} className="min-h-[100px] font-mono text-sm bg-muted/30 custom-scrollbar"/></div>
                       <div className="pt-4 border-t space-y-4">
                         <div className="flex justify-between items-center"><label className="text-sm font-semibold text-primary">Test Cases</label><Button variant="outline" size="sm" onClick={handleAddTestCase}><Plus className="h-4 w-4 mr-1"/> Thêm Test</Button></div>
                         <div className="space-y-3">{testCases.map((tc, index) => (<div key={index} className="flex gap-3 items-start"><Input placeholder="Input" value={tc.input} onChange={e => handleTestCaseChange(index, "input", e.target.value)} className="font-mono text-sm"/><Input placeholder="Expected" value={tc.expectedOutput} onChange={e => handleTestCaseChange(index, "expectedOutput", e.target.value)} className="font-mono text-sm"/><Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveTestCase(index)}><Trash2 className="h-4 w-4" /></Button></div>))}</div>
@@ -253,15 +424,14 @@ const ClassDetail = () => {
         </div>
       </div>
 
-      {/* TABS HỌC THUẬT */}
       <div className="container mx-auto px-6 py-8 max-w-6xl flex-1">
         <Tabs defaultValue="exercises" className="w-full">
-          <TabsList className="mb-8 grid w-full md:w-[400px] grid-cols-3 h-12 bg-muted/40 p-1 rounded-xl">
+          <TabsList className="mb-8 grid w-full md:w-[300px] grid-cols-2 h-12 bg-muted/40 p-1 rounded-xl">
             <TabsTrigger value="exercises" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Code2 className="h-4 w-4 md:mr-2"/><span className="hidden md:inline">Bài tập</span></TabsTrigger>
             <TabsTrigger value="students" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Users className="h-4 w-4 md:mr-2"/><span className="hidden md:inline">Thành viên</span></TabsTrigger>
-            <TabsTrigger value="analytics" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Activity className="h-4 w-4 md:mr-2"/><span className="hidden md:inline">Báo cáo</span></TabsTrigger>
           </TabsList>
 
+          {/* TAB 1: BÀI TẬP */}
           <TabsContent value="exercises" className="focus-visible:outline-none">
             {exercises.length === 0 ? (
               <div className="text-center py-24 text-muted-foreground border border-dashed rounded-2xl bg-card">
@@ -269,53 +439,112 @@ const ClassDetail = () => {
                 <p className="text-lg font-medium text-foreground">Chưa có bài tập nào</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {exercises.map(ex => {
-                  // 🌟 KIỂM TRA TRẠNG THÁI HOÀN THÀNH
-                  const isDone = ex.isCompleted;
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {exercises.map((ex, index) => {
+                  const isCompleted = ex.isCompleted;
 
                   return (
-                    <Card key={ex.id} className={`p-5 flex flex-col justify-between transition-colors group ${isDone ? 'border-green-500 bg-green-50/50 dark:bg-green-900/10' : 'hover:border-primary/50 bg-card'}`}>
-                      <div>
-                        <div className="flex justify-between items-start mb-3">
-                          
-                          {/* HIỂN THỊ BADGE ĐÃ HOÀN THÀNH HOẶC ĐỘ KHÓ */}
-                          {isDone ? (
-                            <span className="flex items-center text-[10px] uppercase font-bold text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-900/30 px-2.5 py-1 rounded-md border border-green-500/30">
-                              <CheckCircle2 className="h-3 w-3 mr-1"/> Đã hoàn thành
-                            </span>
-                          ) : (
-                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md ${ex.difficulty === 'Cơ bản' ? 'bg-success/10 text-success' : ex.difficulty === 'Trung bình' ? 'bg-warning/10 text-warning' : 'bg-destructive/10 text-destructive'}`}>
-                              {ex.difficulty}
-                            </span>
-                          )}
-
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"><MoreVertical className="h-4 w-4" /></Button>
+                    <div key={ex.id} className={`group p-5 rounded-2xl border transition-all flex flex-col h-full ${isCompleted ? 'bg-success/5 border-success/20' : 'bg-card hover:-translate-y-1'}`}>
+                      <div className="flex justify-between items-start mb-3">
+                        <div className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${getDifficultyColor(ex.difficulty)}`}>
+                          {displayDifficulty(ex.difficulty)}
                         </div>
-                        
-                        <h3 className={`font-bold text-lg leading-tight mb-2 ${isDone ? 'text-green-700 dark:text-green-400' : 'text-foreground'}`}>
-                          {ex.title}
-                        </h3>
-                        
-                        <div className="text-sm text-muted-foreground line-clamp-2 mb-6"><ReactMarkdown>{ex.description}</ReactMarkdown></div>
+                        {isCompleted ? (
+                           <CheckCircle2 className="h-4 w-4 text-success" />
+                        ) : (
+                           userRole !== "Student" && <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"><MoreVertical className="h-4 w-4" /></Button>
+                        )}
                       </div>
                       
-                      <Button 
-                        onClick={() => navigate(`/workspace?id=${ex.id}`)} 
-                        variant={isDone ? "outline" : "default"}
-                        className={`w-full transition-all ${isDone ? 'border-green-500 text-green-600 hover:bg-green-50' : 'bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground'}`}
-                      >
-                        <Play className="h-4 w-4 mr-2" /> {isDone ? "Làm lại" : "Vào thực hành"}
-                      </Button>
-                    </Card>
+                      <h3 className={`text-lg font-bold mb-2 line-clamp-2 ${isCompleted ? 'text-success' : 'group-hover:text-primary'}`}>
+                         <span className="text-muted-foreground mr-2 font-mono text-sm">Bài {index + 1}</span> 
+                         {ex.title}
+                      </h3>
+                      
+                      <p className="text-sm mb-6 flex-1 line-clamp-2 text-muted-foreground">
+                         {ex.description}
+                      </p>
+                      
+                      <div className="flex items-center gap-2 mt-auto">
+                        <button 
+                          onClick={() => navigate(`/ai-lesson/${ex.id}`)} 
+                          className="flex-1 flex items-center justify-center font-bold rounded-xl h-10 text-sm bg-accent/10 text-accent hover:bg-accent hover:text-white border border-accent/20"
+                        >
+                          <Sparkles className="h-4 w-4 mr-1.5" /> Gợi ý
+                        </button>
+                        
+                        <button 
+                          onClick={() => navigate(`/workspace?id=${ex.id}`)} 
+                          className={`flex-[2] flex items-center justify-center font-bold rounded-xl h-10 text-sm ${isCompleted ? 'bg-success/10 text-success' : 'bg-muted hover:bg-primary hover:text-primary-foreground'}`}
+                        >
+                          {isCompleted ? "Xem lại" : "Giải ngay"} <ChevronRight className="ml-1 h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
             )}
           </TabsContent>
 
-          <TabsContent value="students" className="focus-visible:outline-none"><Card className="p-16 text-center border-dashed bg-card rounded-2xl"><Users className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" /><h3 className="text-lg font-bold text-foreground">Danh sách Sinh viên</h3></Card></TabsContent>
-          <TabsContent value="analytics" className="focus-visible:outline-none"><Card className="p-16 text-center border-dashed bg-card rounded-2xl"><Activity className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" /><h3 className="text-lg font-bold text-foreground">Báo cáo Phân tích</h3></Card></TabsContent>
+          {/* TAB 2: THÀNH VIÊN */}
+          <TabsContent value="students" className="focus-visible:outline-none">
+            <Card className="p-6 bg-card border shadow-sm rounded-xl">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  Danh sách Sinh viên ({classInfo?.students?.length || 0})
+                </h3>
+                {userRole !== "Student" && (
+                  <Button variant="outline" size="sm" className="hidden md:flex">
+                    <Plus className="h-4 w-4 mr-2"/> Mời thêm sinh viên
+                  </Button>
+                )}
+              </div>
+              
+              {classInfo?.students && classInfo.students.length > 0 ? (
+                <div className="overflow-x-auto rounded-lg border custom-scrollbar">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Họ và tên</th>
+                        <th className="px-4 py-3 font-semibold">Email</th>
+                        <th className="px-4 py-3 font-semibold">Ngày tham gia</th>
+                        {userRole !== "Student" && <th className="px-4 py-3 text-right font-semibold">Thao tác</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {classInfo.students.map((st: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-muted/20 transition-colors">
+                          <td className="px-4 py-3 font-medium text-foreground flex items-center gap-3">
+                            <UserCircle className="h-8 w-8 text-muted-foreground/50" />
+                            {st.fullName || "Học viên ẩn danh"}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">{st.email}</td>
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {st.joinedAt ? new Date(st.joinedAt).toLocaleDateString("vi-VN") : "---"}
+                          </td>
+                          {userRole !== "Student" && (
+                            <td className="px-4 py-3 text-right">
+                              <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 h-8">
+                                Xóa
+                              </Button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-12 border-2 border-dashed rounded-xl bg-muted/10">
+                  <Users className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
+                  <p className="text-muted-foreground">Lớp học này hiện chưa có sinh viên nào tham gia.</p>
+                  <p className="text-sm text-muted-foreground mt-1">Hãy chia sẻ Mã lớp: <strong>{classInfo?.joinCode}</strong> cho sinh viên nhé.</p>
+                </div>
+              )}
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
     </div>

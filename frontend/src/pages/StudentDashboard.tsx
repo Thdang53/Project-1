@@ -190,13 +190,22 @@ const StudentDashboard = () => {
     } catch (error) { console.error(error); }
   };
 
+  // 💡 ĐÃ FIX: ĐỒNG BỘ MÀU SẮC CHO CẢ TIẾNG ANH LẪN TIẾNG VIỆT
   const getDifficultyColor = (diff: string) => {
-    switch (diff?.toLowerCase()) {
-      case 'easy': return 'bg-success/10 text-success border-success/20';
-      case 'medium': return 'bg-warning/10 text-warning border-warning/20';
-      case 'hard': return 'bg-destructive/10 text-destructive border-destructive/20';
-      default: return 'bg-muted text-muted-foreground border-border';
-    }
+    const d = diff?.toLowerCase() || "";
+    if (d === 'easy' || d === 'cơ bản') return 'bg-success/10 text-success border-success/20';
+    if (d === 'medium' || d === 'trung bình') return 'bg-warning/10 text-warning border-warning/20';
+    if (d === 'hard' || d === 'nâng cao') return 'bg-destructive/10 text-destructive border-destructive/20';
+    return 'bg-muted text-muted-foreground border-border';
+  };
+
+  // 💡 THÊM HÀM: CHUYỂN ĐỔI HIỂN THỊ SANG TIẾNG VIỆT
+  const displayDifficulty = (diff: string) => {
+    const d = diff?.toLowerCase() || "";
+    if (d === 'easy' || d === 'cơ bản') return 'CƠ BẢN';
+    if (d === 'medium' || d === 'trung bình') return 'TRUNG BÌNH';
+    if (d === 'hard' || d === 'nâng cao') return 'NÂNG CAO';
+    return 'CƠ BẢN';
   };
 
   const getStatusBadge = (status: string) => {
@@ -306,7 +315,10 @@ const StudentDashboard = () => {
                                         return (
                                           <div key={ex.id} className={`group p-5 rounded-2xl border transition-all flex flex-col h-full ${isCompleted ? 'bg-success/5 border-success/20' : 'bg-card hover:-translate-y-1'}`}>
                                             <div className="flex justify-between items-start mb-3">
-                                              <div className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${getDifficultyColor(ex.difficulty)}`}>{ex.difficulty || 'CƠ BẢN'}</div>
+                                              {/* 💡 ĐÃ FIX: Chỉnh sang Tiếng Việt CƠ BẢN / TRUNG BÌNH / NÂNG CAO */}
+                                              <div className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${getDifficultyColor(ex.difficulty)}`}>
+                                                {displayDifficulty(ex.difficulty)}
+                                              </div>
                                               {isCompleted && <CheckCircle2 className="h-4 w-4 text-success" />}
                                             </div>
                                             <h3 className={`text-lg font-bold mb-2 line-clamp-2 ${isCompleted ? 'text-success' : 'group-hover:text-primary'}`}><span className="text-muted-foreground mr-2 font-mono text-sm">Bài {index + 1}</span> {ex.title}</h3>
@@ -344,7 +356,7 @@ const StudentDashboard = () => {
                 {/* TAB THƯ VIỆN AI */}
                 <TabsContent value="library">
                   {savedItems.length === 0 ? <div className="bg-card rounded-3xl border-2 border-dashed py-20 text-center"><BookHeart className="h-12 w-12 mx-auto mb-4 opacity-30" /><h3 className="font-bold mb-2">Thư viện trống!</h3><Button onClick={() => setIsAiModalOpen(true)} variant="outline"><Wand2 className="mr-2 h-4 w-4"/> Bắt đầu tạo bài</Button></div> : 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">{savedItems.map((item, i) => <div key={i} className="group p-5 rounded-2xl bg-card border shadow-card flex flex-col h-full"><div className="flex justify-between mb-3"><Badge variant="outline" className="text-[10px] text-pink-500 border-pink-500/30 bg-pink-500/10">{item.contentType === "Lesson" ? "Bài giảng AI" : "Bài tập AI"}</Badge><div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{new Date(item.savedAt).toLocaleDateString('vi-VN')}</span><button onClick={() => handleDeleteSavedItem(item.id)} className="hover:text-destructive"><Trash2 className="h-4 w-4" /></button></div></div><h3 className="text-lg font-bold mb-2 line-clamp-2">{item.title}</h3><div className="flex gap-2 mb-4 text-xs font-mono text-muted-foreground"><Terminal className="h-3.5 w-3.5" /> {item.language || "N/A"} <span className="bg-muted px-1.5 rounded">Độ khó: {item.difficulty}</span></div><div className="mt-auto">{item.contentType === "Lesson" ? <Button onClick={() => navigate(`/ai-lesson/saved-${item.id}`, { state: { exercise: item, popupLanguage: item.language, savedLessonContent: item.starterCode } })} className="w-full bg-accent/10 text-accent hover:bg-accent border-accent/20"><BookOpen className="mr-2 h-4 w-4" /> Ôn tập lại</Button> : <Button onClick={() => navigate(`/workspace/saved-${item.id}`, { state: { isAIGenerated: true, pastLanguage: item.language, exerciseData: { ...item, testCases: JSON.parse(item.testCases || "[]") } } })} className="w-full"><Code2 className="mr-2 h-4 w-4" /> Giải bài này</Button>}</div></div>)}</div>}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">{savedItems.map((item, i) => <div key={i} className="group p-5 rounded-2xl bg-card border shadow-card flex flex-col h-full"><div className="flex justify-between mb-3"><Badge variant="outline" className="text-[10px] text-pink-500 border-pink-500/30 bg-pink-500/10">{item.contentType === "Lesson" ? "Bài giảng AI" : "Bài tập AI"}</Badge><div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{new Date(item.savedAt).toLocaleDateString('vi-VN')}</span><button onClick={() => handleDeleteSavedItem(item.id)} className="hover:text-destructive"><Trash2 className="h-4 w-4" /></button></div></div><h3 className="text-lg font-bold mb-2 line-clamp-2">{item.title}</h3><div className="flex gap-2 mb-4 text-xs font-mono text-muted-foreground"><Terminal className="h-3.5 w-3.5" /> {item.language || "N/A"} <span className="bg-muted px-1.5 rounded">Độ khó: {displayDifficulty(item.difficulty)}</span></div><div className="mt-auto">{item.contentType === "Lesson" ? <Button onClick={() => navigate(`/ai-lesson/saved-${item.id}`, { state: { exercise: item, popupLanguage: item.language, savedLessonContent: item.starterCode } })} className="w-full bg-accent/10 text-accent hover:bg-accent border-accent/20"><BookOpen className="mr-2 h-4 w-4" /> Ôn tập lại</Button> : <Button onClick={() => navigate(`/workspace/saved-${item.id}`, { state: { isAIGenerated: true, pastLanguage: item.language, exerciseData: { ...item, testCases: JSON.parse(item.testCases || "[]") } } })} className="w-full"><Code2 className="mr-2 h-4 w-4" /> Giải bài này</Button>}</div></div>)}</div>}
                 </TabsContent>
               </Tabs>
             </motion.div>

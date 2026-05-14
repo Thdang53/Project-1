@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Brain, Sparkles, CheckCircle2, Clock, BookOpen, Loader2, ArrowRight } from "lucide-react";
+import { Brain, Sparkles, CheckCircle2, Clock, Loader2, ArrowRight, ChevronRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -10,7 +9,6 @@ import { useNavigate } from "react-router-dom";
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogFooter,
     DialogHeader,
     DialogTitle,
@@ -21,7 +19,7 @@ interface ReviewItem {
     exerciseId: number;
     exerciseTitle: string;
     difficulty: string;
-    language: string; // 💡 ĐÃ THÊM: Nhận diện ngôn ngữ từ Backend
+    language: string; 
     repetitions: number;
     nextReviewDate: string;
 }
@@ -63,20 +61,18 @@ export default function DailyReviewsTab() {
         }
     };
 
-    // 🚀 HÀM GỌI AI CHẾ ĐỀ NGAY TẠI POPUP (CẬP NHẬT NHẬN THÊM BIẾN LANG)
+    // 🚀 HÀM GỌI AI CHẾ ĐỀ NGAY TẠI POPUP
     const handleGenerateAIReview = async (exerciseId: number, title: string, difficulty: string, lang: string) => {
         setIsPreviewOpen(true);
         setIsAIGenerating(true);
         setAiGeneratedData(null);
 
         try {
-            // 1. Lấy đề gốc để làm ngữ cảnh
             const originalRes = await fetch(`${API_BASE_URL || ''}/api/Exercises/${exerciseId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const originalEx = await originalRes.json();
 
-            // 2. Gọi AI chế đề ngay lập tức
             const response = await fetch(`${API_BASE_URL || ''}/api/AIAssistant/generate-exercise`, {
                 method: "POST",
                 headers: { 
@@ -84,7 +80,7 @@ export default function DailyReviewsTab() {
                     "Authorization": `Bearer ${token}` 
                 },
                 body: JSON.stringify({
-                    Language: lang || "python", // 💡 ĐÃ FIX: Truyền ngôn ngữ thực tế của sinh viên cho AI
+                    Language: lang || "python", 
                     Topic: `Ôn tập lại bài toán: ${title}. Yêu cầu: Giữ nguyên thuật toán cốt lõi, viết cốt truyện mới lạ.`,
                     Difficulty: difficulty,
                     StudentEmail: user?.email 
@@ -98,7 +94,7 @@ export default function DailyReviewsTab() {
                     originalId: exerciseId,
                     originalTestCases: originalEx.testCases,
                     originalLessonId: originalEx.lessonId,
-                    language: lang || "python" // 💡 ĐÃ FIX: Lưu ngôn ngữ lại để lát truyền qua Workspace
+                    language: lang || "python" 
                 });
             } else {
                 toast({ title: "Lỗi AI", description: "AI không thể tạo đề bài lúc này.", variant: "destructive" });
@@ -128,10 +124,27 @@ export default function DailyReviewsTab() {
                     starterCode: aiGeneratedData.starterCode || aiGeneratedData.StarterCode,
                     id: aiGeneratedData.originalId,
                     lessonId: aiGeneratedData.originalLessonId,
-                    language: aiGeneratedData.language // 💡 ĐÃ FIX: Bắn thẳng ngôn ngữ sang bên kia
+                    language: aiGeneratedData.language 
                 }
             }
         });
+    };
+
+    // 💡 HÀM ĐỒNG BỘ STYLE Y HỆT STUDENT DASHBOARD LỘ TRÌNH HỌC
+    const getDifficultyColor = (diff: string) => {
+        const d = diff?.toLowerCase() || "";
+        if (d === 'easy' || d === 'cơ bản') return 'bg-success/10 text-success border-success/20';
+        if (d === 'medium' || d === 'trung bình') return 'bg-warning/10 text-warning border-warning/20';
+        if (d === 'hard' || d === 'nâng cao') return 'bg-destructive/10 text-destructive border-destructive/20';
+        return 'bg-muted text-muted-foreground border-border';
+    };
+
+    const displayDifficulty = (diff: string) => {
+        const d = diff?.toLowerCase() || "";
+        if (d === 'easy' || d === 'cơ bản') return 'CƠ BẢN';
+        if (d === 'medium' || d === 'trung bình') return 'TRUNG BÌNH';
+        if (d === 'hard' || d === 'nâng cao') return 'NÂNG CAO';
+        return 'CƠ BẢN';
     };
 
     if (loading) {
@@ -151,9 +164,9 @@ export default function DailyReviewsTab() {
             </div>
 
             {reviews.length === 0 ? (
-                <Card className="border-dashed bg-muted/30">
+                <Card className="border-dashed rounded-3xl bg-card shadow-none">
                     <CardContent className="flex flex-col items-center justify-center h-64 text-center">
-                        <CheckCircle2 className="h-16 w-16 text-green-500 mb-4" />
+                        <CheckCircle2 className="h-16 w-16 text-green-500 mb-4 opacity-80" />
                         <h3 className="text-xl font-bold mb-2">Trí nhớ của bạn đang ở trạng thái hoàn hảo!</h3>
                         <p className="text-muted-foreground max-w-md">
                             Hôm nay không có kiến thức nào đến hạn điểm rơi quên lãng. Bạn có thể nghỉ ngơi hoặc tiếp tục học bài mới nhé.
@@ -161,35 +174,56 @@ export default function DailyReviewsTab() {
                     </CardContent>
                 </Card>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {reviews.map((review) => (
-                        <Card key={review.exerciseId} className="border-l-4 border-l-purple-500 hover:shadow-md transition-all">
-                            <CardHeader className="pb-2">
-                                <div className="flex justify-between items-center mb-2">
-                                    <Badge className="w-fit" variant="secondary">{review.difficulty}</Badge>
-                                    <Badge className="w-fit" variant="outline">{review.language?.toUpperCase() || "PYTHON"}</Badge>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {reviews.map((review, index) => (
+                        // 💡 ĐÃ FIX: Style vùng chứa Card giống y hệt phần Lộ trình học
+                        <div key={review.exerciseId} className="group p-5 rounded-2xl border transition-all flex flex-col h-full bg-card hover:-translate-y-1">
+                            <div className="flex justify-between items-start mb-3">
+                                {/* 💡 ĐÃ FIX: Độ khó theo chuẩn */}
+                                <div className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${getDifficultyColor(review.difficulty)}`}>
+                                    {displayDifficulty(review.difficulty)}
                                 </div>
-                                <CardTitle className="text-lg line-clamp-2">{review.exerciseTitle}</CardTitle>
-                                <CardDescription>Trí nhớ: {review.repetitions} lần thành công</CardDescription>
-                            </CardHeader>
-                            <CardFooter>
-                                <Button 
-                                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white"
-                                    // 💡 ĐÃ FIX: Truyền biến review.language vào hàm khi bấm nút
+                                {/* 💡 ĐÃ FIX: Ngôn ngữ Badge góc bên phải */}
+                                <div className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border font-mono bg-muted text-muted-foreground border-border flex items-center gap-1">
+                                    <Clock className="h-3 w-3 text-warning" /> {review.language?.toUpperCase() || "PYTHON"}
+                                </div>
+                            </div>
+                            
+                            {/* 💡 ĐÃ FIX: Tiêu đề có tiền tố giống Lộ trình học */}
+                            <h3 className="text-lg font-bold mb-2 line-clamp-2 group-hover:text-primary transition-colors text-foreground">
+                                <span className="text-muted-foreground mr-2 font-mono text-sm">Ôn tập</span> 
+                                {review.exerciseTitle}
+                            </h3>
+                            
+                            {/* 💡 ĐÃ FIX: Mô tả giới hạn 2 dòng mờ đi */}
+                            <p className="text-sm mb-6 flex-1 line-clamp-2 text-muted-foreground">
+                                Đã giải thành công {review.repetitions} lần liên tiếp. Thuật toán AI khuyên bạn nên ôn lại ngay bây giờ.
+                            </p>
+                            
+                            {/* 💡 ĐÃ FIX: Bố cục 2 nút bấm y hệt Lộ trình học */}
+                            <div className="flex items-center gap-2 mt-auto">
+                                <button 
+                                    className="flex-1 flex items-center justify-center font-bold rounded-xl h-10 text-sm bg-accent/10 text-accent hover:bg-accent hover:text-white border border-accent/20 transition-all"
                                     onClick={() => handleGenerateAIReview(review.exerciseId, review.exerciseTitle, review.difficulty, review.language)}
                                 >
-                                    <Sparkles className="mr-2 h-4 w-4" /> Ôn ngay với AI
-                                </Button>
-                            </CardFooter>
-                        </Card>
+                                    <Sparkles className="h-4 w-4 mr-1.5" /> Chế đề
+                                </button>
+                                <button 
+                                    className="flex-[2] flex items-center justify-center font-bold rounded-xl h-10 text-sm bg-muted hover:bg-primary hover:text-primary-foreground transition-all"
+                                    onClick={() => handleGenerateAIReview(review.exerciseId, review.exerciseTitle, review.difficulty, review.language)}
+                                >
+                                    Ôn ngay <ChevronRight className="ml-1 h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
                     ))}
                 </div>
             )}
 
             <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-                <DialogContent className="sm:max-w-[700px]">
+                <DialogContent className="sm:max-w-[700px] border-border shadow-2xl">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-xl text-purple-700">
+                        <DialogTitle className="flex items-center gap-2 text-xl text-primary">
                             <Sparkles className="h-5 w-5" />
                             {isAIGenerating ? "AI đang chế đề..." : `Biến thể ôn tập: ${aiGeneratedData?.title || aiGeneratedData?.Title || ""}`}
                         </DialogTitle>
@@ -198,11 +232,11 @@ export default function DailyReviewsTab() {
                     <div className="py-4">
                         {isAIGenerating ? (
                             <div className="flex flex-col items-center justify-center h-40 space-y-4">
-                                <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+                                <Loader2 className="h-8 w-8 animate-spin text-primary" />
                                 <p className="text-sm text-muted-foreground">Đang xào nấu dữ liệu cho bạn...</p>
                             </div>
                         ) : (
-                            <ScrollArea className="h-[350px] w-full rounded-md border p-4 bg-muted/30">
+                            <ScrollArea className="h-[350px] w-full rounded-2xl border p-5 bg-muted/30">
                                 <div className="prose prose-sm dark:prose-invert max-w-none text-foreground/80 leading-relaxed"
                                     dangerouslySetInnerHTML={{ __html: aiGeneratedData?.description || aiGeneratedData?.Description || "Không thể tải được mô tả bài toán." }}
                                 />
@@ -211,11 +245,11 @@ export default function DailyReviewsTab() {
                     </div>
 
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsPreviewOpen(false)}>Hủy</Button>
+                        <Button variant="outline" className="rounded-xl" onClick={() => setIsPreviewOpen(false)}>Hủy</Button>
                         <Button 
                             onClick={handleProceedToWorkspace} 
                             disabled={isAIGenerating}
-                            className="bg-purple-600 text-white"
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl shadow-sm"
                         >
                             Vào học ngay <ArrowRight className="ml-2 h-4 w-4" />
                         </Button>
