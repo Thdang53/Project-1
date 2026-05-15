@@ -41,7 +41,7 @@ const ClassDetail = () => {
   const [newEx, setNewEx] = useState({ title: "", description: "", difficulty: "Cơ bản", starterCode: "# Viết code của bạn ở đây...\ndef solve():\n  pass" });
   const [testCases, setTestCases] = useState<TestCase[]>([{ input: "", expectedOutput: "" }]);
 
-  // 🌟 STATES CHO AI COPILOT
+  // STATES CHO AI COPILOT
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -68,7 +68,6 @@ const ClassDetail = () => {
     } catch (e) { toast({ title: "Lỗi tải dữ liệu", variant: "destructive" }); } finally { setIsLoading(false); }
   };
 
-  // 🌟 HÀM TẢI DANH SÁCH CUỘC TRÒ CHUYỆN (SESSIONS)
   const fetchChatSessions = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/Advisor/sessions/${id}`, { headers: { "Authorization": `Bearer ${token}` } });
@@ -84,7 +83,6 @@ const ClassDetail = () => {
     } catch (error) { console.error("Lỗi tải danh sách session"); }
   };
 
-  // 🌟 HÀM TẢI NỘI DUNG CHAT THEO SESSION ID
   const loadChatHistory = async (sessionId: number) => {
     if (sessionId === 0) {
         handleNewChat();
@@ -100,18 +98,15 @@ const ClassDetail = () => {
     } catch (error) { console.error("Lỗi tải lịch sử chat"); } finally { setIsChatting(false); }
   };
 
-  // 💡 ĐÃ FIX: HÀM TẠO CUỘC TRÒ CHUYỆN MỚI (CHÈN NGAY 1 PHIÊN ẢO VÀO UI)
   const handleNewChat = () => {
     setCurrentSessionId(null);
     setChatMessages([{ role: "ai", content: `🔄 Đã làm mới đoạn chat. Chào Thầy/Cô, em có thể giúp gì tiếp theo ạ?` }]);
     
-    // Chèn 1 dòng "phiên ảo" (id 0) vào danh sách để sinh viên nhìn thấy sự thay đổi ngay lập tức
     if (!chatSessions.find(s => s.id === 0)) {
         setChatSessions(prev => [{ id: 0, title: "Đoạn chat mới...", createdAt: new Date().toISOString() }, ...prev]);
     }
   };
 
-  // 🌟 HÀM NHẮN TIN
   const handleSendMessage = async (customMessage?: string) => {
     const messageToSend = customMessage || chatInput;
     if (!messageToSend.trim() || isChatting) return;
@@ -133,7 +128,6 @@ const ClassDetail = () => {
       if (data.success) {
         setChatMessages(prev => [...prev, { role: "ai", content: data.reply }]);
         
-        // 💡 ĐÃ FIX: Nếu chat thành công, gọi lại danh sách từ DB để cập nhật chính thức
         if (!currentSessionId && data.sessionId) {
           setCurrentSessionId(data.sessionId);
           fetchChatSessions(); 
@@ -232,11 +226,12 @@ const ClassDetail = () => {
             
             {userRole !== "Student" && (
               <div className="flex gap-3">
-                {/* 💡 SỰ KIỆN onOpenChange ĐỂ TẢI DANH SÁCH CHAT MỖI KHI MỞ BẢNG LÊN */}
                 <Sheet onOpenChange={(open) => { if (open) fetchChatSessions(); }}>
                   <SheetTrigger asChild>
-                    <Button id="ai-advisor-trigger" className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white h-10 rounded-xl shadow-sm">
-                      <Sparkles className="h-4 w-4 mr-2" /> AI Cố vấn
+                    {/* 💡 ĐÃ FIX: Chèn Logo vào nút Mở AI Cố vấn */}
+                    <Button id="ai-advisor-trigger" className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white h-10 rounded-xl shadow-sm px-4">
+                      <img src="/Logo-tabbb.png" className="h-5 w-auto mr-2 object-contain" alt="AI" />
+                      AI Cố vấn
                     </Button>
                   </SheetTrigger>
                   
@@ -249,26 +244,22 @@ const ClassDetail = () => {
 
                     <div className="flex h-full w-full overflow-hidden">
                       
-                      {/* ======================================================== */}
-                      {/* CỘT TRÁI (SIDEBAR): HIỂN THỊ DANH SÁCH SESSIONS */}
-                      {/* ======================================================== */}
+                      {/* CỘT TRÁI (SIDEBAR) */}
                       <div className="hidden sm:flex flex-col w-[260px] lg:w-[280px] border-r border-border/50 bg-muted/30 shrink-0">
                         
                         <div className="h-14 flex items-center px-5 border-b border-border/50 shrink-0 bg-background/50 backdrop-blur-sm">
-                          <div className="flex items-center gap-2.5 text-blue-600 dark:text-blue-400">
-                             <Bot className="h-5 w-5" />
-                             <span className="font-bold text-[15px] whitespace-nowrap">AI Cố vấn Học tập</span>
+                          {/* 💡 ĐÃ FIX: Chèn Logo vào Header Sidebar */}
+                          <div className="flex items-center gap-2.5">
+                             <img src="/Logo-tabbb.png" className="h-6 w-auto object-contain" alt="AI" />
+                             <span className="font-bold text-[15px] whitespace-nowrap text-foreground">AI Cố vấn Học tập</span>
                           </div>
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-3 py-5 space-y-6 custom-scrollbar">
-                          
-                          {/* Nút Chat Mới */}
                           <Button onClick={handleNewChat} variant="outline" className="w-full justify-start gap-2 text-blue-600 border-blue-200 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-900 dark:hover:bg-blue-900/30 h-10 rounded-xl transition-all shadow-sm">
                             <Plus className="h-5 w-5" /> <span className="font-semibold">Đoạn chat mới</span>
                           </Button>
                           
-                          {/* Nhóm Công cụ */}
                           <div>
                             <div className="text-xs font-bold text-muted-foreground mb-3 px-2 uppercase tracking-wider">Công cụ Cố vấn</div>
                             <div className="space-y-1">
@@ -284,7 +275,6 @@ const ClassDetail = () => {
                             </div>
                           </div>
 
-                          {/* Lịch sử Chats */}
                           <div>
                             <div className="text-xs font-bold text-muted-foreground mb-3 px-2 uppercase tracking-wider">Lịch sử trò chuyện</div>
                             <div className="space-y-1">
@@ -296,7 +286,6 @@ const ClassDetail = () => {
                                     key={session.id} 
                                     variant="ghost" 
                                     onClick={() => loadChatHistory(session.id)}
-                                    // Highlight màu xanh nếu đang ở đúng Session đó
                                     className={`w-full justify-start font-medium text-sm h-10 rounded-lg px-3 transition-all ${
                                       currentSessionId === session.id 
                                         ? 'bg-blue-600/10 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 font-semibold' 
@@ -313,15 +302,14 @@ const ClassDetail = () => {
                         </div>
                       </div>
 
-                      {/* ======================================================== */}
                       {/* CỘT PHẢI (MAIN CHAT AREA) */}
-                      {/* ======================================================== */}
                       <div className="flex-1 flex flex-col h-full relative min-w-0 bg-background">
                         
                         <div className="h-14 border-b border-border/50 flex items-center justify-between px-4 bg-background/95 backdrop-blur-md shrink-0 z-10">
-                          <div className="flex sm:hidden items-center gap-2 text-blue-600">
-                             <Bot className="h-5 w-5" />
-                             <span className="font-bold text-[15px]">AI Cố vấn Học tập</span>
+                          {/* 💡 ĐÃ FIX: Chèn Logo vào Header Mobile */}
+                          <div className="flex sm:hidden items-center gap-2">
+                             <img src="/Logo-tabbb.png" className="h-6 w-auto object-contain" alt="AI" />
+                             <span className="font-bold text-[15px] text-foreground">AI Cố vấn Học tập</span>
                           </div>
                           
                           <div className="hidden sm:flex items-center">
@@ -346,8 +334,9 @@ const ClassDetail = () => {
                            <div className="mx-auto w-full max-w-4xl flex flex-col gap-6 px-4 py-6">
                               {chatMessages.map((msg, idx) => (
                                 <div key={idx} className={`flex items-start gap-4 w-full ${msg.role === 'user' ? 'flex-row-reverse ml-auto' : ''}`}>
-                                  <div className={`h-8 w-8 shrink-0 mt-1 rounded-full flex items-center justify-center border border-border/50 shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gradient-to-br from-blue-600 to-violet-600 text-white'}`}>
-                                    {msg.role === 'user' ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+                                  {/* 💡 ĐÃ FIX: Chèn Logo vào Avatar Chat của AI */}
+                                  <div className={`h-8 w-8 shrink-0 mt-1 rounded-full flex items-center justify-center border border-border/50 shadow-sm overflow-hidden ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-muted/50 p-0.5'}`}>
+                                    {msg.role === 'user' ? <User className="h-4 w-4" /> : <img src="/Logo-tabbb.png" className="h-full w-full object-contain" alt="AI" />}
                                   </div>
                                   
                                   <div className={`px-5 py-3.5 text-[15px] leading-relaxed overflow-hidden prose prose-sm shadow-sm ${msg.role === 'user' ? 'max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-tr-sm bg-blue-600 text-white prose-invert' : 'w-full max-w-full rounded-2xl rounded-tl-sm border border-border/60 bg-muted/30 text-foreground dark:prose-invert'}`}>
@@ -362,8 +351,9 @@ const ClassDetail = () => {
                               
                               {isChatting && (
                                 <div className="flex items-start gap-4 w-full">
-                                  <div className="h-8 w-8 shrink-0 mt-1 rounded-full flex items-center justify-center border border-border/50 shadow-sm bg-gradient-to-br from-blue-600 to-violet-600 text-white">
-                                    <Sparkles className="h-4 w-4" />
+                                  {/* 💡 ĐÃ FIX: Avatar AI lúc đang loading */}
+                                  <div className="h-8 w-8 shrink-0 mt-1 rounded-full flex items-center justify-center border border-border/50 shadow-sm bg-muted/50 p-0.5 overflow-hidden">
+                                    <img src="/Logo-tabbb.png" className="h-full w-full object-contain" alt="AI" />
                                   </div>
                                   <div className="rounded-2xl rounded-tl-sm border border-border/60 bg-muted/30 px-5 py-4">
                                     <div className="flex items-center gap-2">
@@ -431,7 +421,6 @@ const ClassDetail = () => {
             <TabsTrigger value="students" className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Users className="h-4 w-4 md:mr-2"/><span className="hidden md:inline">Thành viên</span></TabsTrigger>
           </TabsList>
 
-          {/* TAB 1: BÀI TẬP */}
           <TabsContent value="exercises" className="focus-visible:outline-none">
             {exercises.length === 0 ? (
               <div className="text-center py-24 text-muted-foreground border border-dashed rounded-2xl bg-card">
@@ -487,7 +476,6 @@ const ClassDetail = () => {
             )}
           </TabsContent>
 
-          {/* TAB 2: THÀNH VIÊN */}
           <TabsContent value="students" className="focus-visible:outline-none">
             <Card className="p-6 bg-card border shadow-sm rounded-xl">
               <div className="flex justify-between items-center mb-6">

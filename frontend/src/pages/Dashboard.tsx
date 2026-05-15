@@ -23,9 +23,6 @@ import ExerciseModal from "../components/dashboard/ExerciseModal";
 import RoleDialog from "../components/dashboard/RoleDialog";
 import DeleteConfirmDialog from "../components/dashboard/DeleteConfirmDialog";
 
-// 🚀 Tích hợp Trợ lý Gemini Sidebar
-import GeminiSidebar from "../components/dashboard/GeminiSidebar";
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const Dashboard = () => {
@@ -164,9 +161,6 @@ const Dashboard = () => {
       <ExerciseModal open={showAddExercise} setOpen={setShowAddExercise} isEdit={isEditModeEx} ex={newExercise} setEx={setNewExercise} courses={courses} lessons={lessons} user={user} effectiveUserId={effectiveUserId} selectedCourseId={selectedCourseIdEx} setSelectedCourseId={setSelectedCourseIdEx} testCases={testCases} addTestCase={addTC} updateTestCase={upTC} removeTestCase={rmTC} onSave={handleSaveExercise} isSubmitting={isSubmitting} />
       <RoleDialog open={showRoleDialog} setOpen={setShowRoleDialog} targetUser={roleTargetUser} role={selectedNewRole} setRole={setSelectedNewRole} onSubmit={submitRoleChange} isSubmitting={isSubmitting} />
       <DeleteConfirmDialog open={deleteConfirm.isOpen} setOpen={(open:boolean) => setDeleteConfirm(p => ({...p, isOpen: open}))} info={deleteConfirm} onConfirm={executeDelete} isSubmitting={isSubmitting} />
-
-      {/* 🚀 ĐÂY LÀ CHỖ GỌI SIÊU PHẨM TRỢ LÝ GEMINI */}
-      <GeminiSidebar />
     </div>
   );
 };

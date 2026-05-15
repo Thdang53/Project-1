@@ -1,9 +1,9 @@
 import { useState, useEffect, Fragment } from "react";
-import { Link, useSearchParams, useLocation } from "react-router-dom";
+import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom"; // Đã thêm useNavigate
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge"; 
 import { 
-  Code2, Play, Upload, BrainCircuit, 
+  Play, Upload, BrainCircuit, 
   Loader2, Heart, Flag
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
@@ -101,6 +101,7 @@ const MarkdownComponents = {
 const Workspace = () => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
+  const navigate = useNavigate(); // Đã thêm
   const exerciseId = searchParams.get("id") || location.pathname.split('/').pop();
   
   const reviewId = searchParams.get("reviewId");
@@ -115,7 +116,7 @@ const Workspace = () => {
   const draftKey = `draft_code_exercise_${exerciseId || reviewId}`;
   const savedDraft = (exerciseId || reviewId) ? localStorage.getItem(draftKey) : null;
 
-  // 💡 ĐÃ FIX: Ưu tiên lấy ngôn ngữ từ AI truyền sang, nếu không có mới dùng pastLanguage hoặc mặc định là python
+  // Ưu tiên lấy ngôn ngữ từ AI truyền sang
   const initialLang = aiExerciseData?.language?.toLowerCase() || pastLanguage || "python";
   const [language, setLanguage] = useState(initialLang);
   const [code, setCode] = useState(pastCode || savedDraft || defaultTemplates[initialLang]);
@@ -151,7 +152,7 @@ const Workspace = () => {
   const { user, token } = useAuth();
   const userEmail = user?.email || "";
 
-  // --- 🌟 STATE CHO POPUP BÁO CÁO GOM CHUNG ---
+  // STATE CHO POPUP BÁO CÁO GOM CHUNG
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportMessage, setReportMessage] = useState("");
   const [reportedAIResponse, setReportedAIResponse] = useState("");
@@ -170,17 +171,14 @@ const Workspace = () => {
     }
   }, [code, exerciseId, reviewId]);
 
-  // 💡 ĐÃ FIX: ƯU TIÊN SỬ DỤNG DỮ LIỆU TỪ POPUP NẾU CÓ, NẾU KHÔNG MỚI GỌI API
   useEffect(() => {
     let isMounted = true;
 
     const loadExercise = async () => {
       setIsLoading(true);
 
-      // --- TRƯỜNG HỢP 1: BÀI TẬP DO AI TẠO (TRUYỀN TỪ DASHBOARD/POPUP SANG) ---
+      // TRƯỜNG HỢP 1: BÀI TẬP DO AI TẠO
       if (isAIGenerated && aiExerciseData) {
-        
-        // 💡 ĐÃ FIX: Đồng bộ lại State Language một lần nữa cho chắc chắn
         const targetLang = aiExerciseData.language?.toLowerCase() || pastLanguage || "python";
         setLanguage(targetLang);
 
@@ -195,7 +193,6 @@ const Workspace = () => {
         });
         
         if (!savedDraft && !pastCode) {
-          // 💡 ĐÃ FIX: Nạp đúng template mặc định của ngôn ngữ đó nếu không có code nháp
           setCode(aiExerciseData.starterCode || aiExerciseData.StarterCode || defaultTemplates[targetLang]);
         }
         if (isMounted) setIsLoading(false);
@@ -203,7 +200,7 @@ const Workspace = () => {
       }
 
       try {
-        // --- TRƯỜNG HỢP 2: ÔN TẬP THÍCH ỨNG DỰ PHÒNG (Ví dụ: Bấm F5 hoặc Share Link) ---
+        // TRƯỜNG HỢP 2: ÔN TẬP THÍCH ỨNG
         if (mode === "adaptive-review" && reviewId) {
           const originalRes = await fetch(`${API_BASE_URL}/api/Exercises/${reviewId}`, {
             headers: { "Authorization": `Bearer ${token}` }
@@ -246,7 +243,7 @@ const Workspace = () => {
           return; 
         }
 
-        // --- TRƯỜNG HỢP 3: LÀM BÀI TẬP THÔNG THƯỜNG ---
+        // TRƯỜNG HỢP 3: LÀM BÀI TẬP THÔNG THƯỜNG
         const isInvalidId = !exerciseId || exerciseId === "workspace";
         const fetchUrl = isInvalidId 
           ? `${API_BASE_URL}/api/Exercises/first`
@@ -529,21 +526,16 @@ const Workspace = () => {
     }
   };
 
-  // ====================================================================
-  // 🚀 HÀM NÀY MỞ POPUP (THAY THẾ HOÀN TOÀN CHO WINDOW.PROMPT)
-  // ====================================================================
   const handleReportAI = (originalAIResponse: string) => {
     if (!user?.email) {
       toast({ title: "Lỗi", description: "Bạn cần đăng nhập để báo cáo.", variant: "destructive" });
       return;
     }
-    // Gắn dữ liệu và mở Popup
     setReportedAIResponse(originalAIResponse);
     setReportMessage("");
     setIsReportDialogOpen(true);
   };
 
-  // 🚀 HÀM NÀY GỌI API KHI NGƯỜI DÙNG BẤM "GỬI" TRONG POPUP
   const submitReport = async () => {
     if (!reportMessage.trim()) {
       toast({ title: "Lỗi", description: "Vui lòng nhập nội dung cần hỗ trợ!", variant: "destructive" });
@@ -565,7 +557,7 @@ const Workspace = () => {
       const data = await res.json();
       if (data.success) {
         toast({ title: "Đã gửi báo cáo!", description: data.message });
-        setIsReportDialogOpen(false); // Tắt popup
+        setIsReportDialogOpen(false);
       } else {
         toast({ title: "Lỗi", description: data.message, variant: "destructive" });
       }
@@ -612,11 +604,14 @@ const Workspace = () => {
       {/* Top bar */}
       <div className="flex h-12 items-center justify-between border-b border-editor-line px-4">
         <div className="flex items-center gap-3">
-          <Link to="/student-dashboard" className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-primary">
-              <Code2 className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="text-sm font-bold text-editor-foreground">AI Learning Hub</span>
+          {/* 💡 ĐÃ FIX: Chèn Logo Nữ Chiến Binh vào góc trái */}
+          <Link to="/student-dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+             <img 
+                src="/Logo-tabbb.png" 
+                alt="Brand Logo" 
+                className="h-8 w-auto object-contain" 
+             />
+             <span className="text-sm font-bold text-editor-foreground hidden sm:inline-block">AI Learning Hub</span>
           </Link>
           <span className="text-editor-foreground/30">|</span>
           <span className="text-sm text-editor-foreground/60 flex items-center gap-1.5">
@@ -692,7 +687,7 @@ const Workspace = () => {
           setChatInput={setChatInput}
           cooldown={cooldown}
           handleSendMessage={handleSendMessage}
-          handleReportAI={handleReportAI} // Truyền cái hàm mở Popup xuống đây
+          handleReportAI={handleReportAI} 
         />
 
         {/* Center: Code Editor */}
@@ -729,14 +724,13 @@ const Workspace = () => {
           isAILoading={isAILoading}
           defaultAiFeedback={defaultAiFeedback}
           MarkdownComponents={MarkdownComponents}
-          handleReportAI={handleReportAI} // Cũng truyền hàm mở Popup sang đây
+          handleReportAI={handleReportAI}
           exerciseId={Number(exerciseId) || 0}
           userEmail={userEmail}   
           token={token}
         />
       </div>
 
-      {/* COMPONENT POPUP GIAO DIỆN SHADCN UI GOM CHUNG CHO TOÀN BỘ WORKSPACE */}
       <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
         <DialogContent className="sm:max-w-[500px] border-editor-line bg-[#1E1E1E] text-white">
           <DialogHeader>

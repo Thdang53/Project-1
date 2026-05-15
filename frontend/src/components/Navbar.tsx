@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge"; 
-import { Code2, LogOut, User, Bell, CheckCircle2, MessageSquareText, BookOpen } from "lucide-react";
+import { LogOut, User, Bell, CheckCircle2, MessageSquareText, BookOpen } from "lucide-react";
 import { useAuth } from "../hooks/useAuth"; 
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -91,16 +91,20 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
   return (
     <nav className={`w-full z-40 transition-all duration-300 ${isTransparent ? 'absolute top-0 bg-transparent' : 'bg-background border-b border-border'}`}>
       <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 group">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary group-hover:opacity-90 transition-opacity">
-            <Code2 className="h-5 w-5 text-white" />
-          </div>
+        
+        {/* KHU VỰC LOGO ĐÃ ĐƯỢC CẬP NHẬT */}
+        <Link to="/" className="flex items-center gap-2 group hover:opacity-80 transition-opacity">
+          <img 
+            src="/Logo-tabbb.png" 
+            alt="Brand Logo" 
+            className="h-10 w-auto object-contain" 
+          />
           <span className={`font-bold text-xl tracking-tight ${isTransparent ? 'text-primary-foreground' : 'text-foreground'}`}>
             AI Learning Hub
           </span>
         </Link>
 
-        {/* CÁC MENU ĐIỀU HƯỚNG (ĐÃ BỔ SUNG TRANG LỚP HỌC) */}
+        {/* CÁC MENU ĐIỀU HƯỚNG */}
         <div className="hidden md:flex items-center gap-8">
           <Link to="/" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
             Trang chủ
@@ -110,7 +114,7 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
             Không gian học tập
           </Link>
 
-          {/* NÚT LỚP HỌC (HIỂN THỊ CHO TẤT CẢ MỌI NGƯỜI ĐÃ ĐĂNG NHẬP) */}
+          {/* NÚT LỚP HỌC */}
           {user && (
             <Link to="/classrooms" className={`text-sm font-medium hover:text-primary transition-colors ${isTransparent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
               Lớp học
@@ -215,7 +219,6 @@ const Navbar = ({ variant = "default" }: { variant?: "transparent" | "default" }
                       </div>
                       <div className="p-1">
                         
-                        {/* 💡 NÚT HỒ SƠ ĐÃ ĐƯỢC KHÔI PHỤC VÀO ĐÂY */}
                         <Link to="/profile" className="w-full text-left flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors">
                           <User className="h-4 w-4" /> Hồ sơ cá nhân
                         </Link>
